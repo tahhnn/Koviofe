@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Target deps stage to get node_modules installed, saving build time in development
+      target: deps
+    container_name: kovio-frontend
+    # Override startup command to run in dev mode with file watching enabled
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    environment:
+      - HOSTNAME=0.0.0.0
+      - INTERNAL_API_URL=http://host.docker.internal:8082/api
+      - NEXT_PUBLIC_API_URL=http://localhost:8082/api
+      - NEXT_PUBLIC_CENTRIFUGO_URL=ws://localhost:8000/connection/websocket
+      - WATCHPACK_POLLING=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+      # Anonymous volumes prevent host node_modules and .next from overriding container caches
+      - /app/node_modules
+      - /app/.next
+    restart: always
