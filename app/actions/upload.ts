@@ -50,7 +50,9 @@ export async function uploadImageAction(formData: FormData) {
       return { success: false, error: 'File content does not match an allowed image type' }
     }
 
-    const uploadDir = join(process.cwd(), 'public', 'uploads')
+    // Keep uploads outside public/ — Next.js production only indexes public/
+    // at process start, so runtime writes there 404 until restart.
+    const uploadDir = process.env.UPLOAD_DIR || join(process.cwd(), 'uploads')
     await mkdir(uploadDir, { recursive: true })
 
     const fileName = `img-${Date.now()}-${randomBytes(8).toString('hex')}${safeExt}`

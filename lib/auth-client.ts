@@ -1,6 +1,6 @@
 'use client'
 
-import { setAuthCookies, clearAuthCookies } from '@/app/actions/auth-session'
+
 
 const getApiUrl = () => {
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL
@@ -26,6 +26,7 @@ export const authClient = {
           return { error: { message: data.error || 'Login failed' } }
         }
 
+        const { setAuthCookies } = await import('@/app/actions/auth-session')
         await setAuthCookies(data.token, data.refresh_token)
         localStorage.setItem('user', JSON.stringify(data.user))
 
@@ -65,6 +66,7 @@ export const authClient = {
         return { error: { message: data.error || 'Verification failed' } }
       }
 
+      const { setAuthCookies } = await import('@/app/actions/auth-session')
       await setAuthCookies(data.token, data.refresh_token)
       localStorage.setItem('user', JSON.stringify(data.user))
 

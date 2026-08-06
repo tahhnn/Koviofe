@@ -11,7 +11,7 @@ const outfit = Outfit({
 })
 
 export const metadata: Metadata = {
-  title: 'Kovio - Live quiz rooms',
+  title: 'quizzZone - Live quiz rooms',
   description: 'Host live quizzes with PIN join, realtime scoring, and private or open rooms.',
   icons: {
     icon: [

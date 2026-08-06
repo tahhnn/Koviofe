@@ -9,7 +9,7 @@ import { ImagePlus, Link2, Search, Upload, X, Loader2 } from 'lucide-react'
 interface GiphyPickerProps {
   isOpen: boolean
   onClose: () => void
-  onSelect: (url: string) => void
+  onSelect: (url: string) => void | Promise<void>
 }
 
 const GIPHY_PROXY = '/api/giphy'
@@ -79,9 +79,12 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
     }
   }
 
-  const pick = (url: string) => {
-    onSelect(url)
-    onClose()
+  const pick = async (url: string) => {
+    try {
+      await onSelect(url)
+    } finally {
+      onClose()
+    }
   }
 
   const handleFile = async (file: File | undefined) => {

@@ -57,16 +57,17 @@ export default function PlayerGameScreen() {
   const [pinPosition, setPinPosition] = useState<{ x: number; y: number } | null>(null)
   const [timeLeft, setTimeLeft] = useState(0)
   const [submitted, setSubmitted] = useState(false)
-  const [feedback, setFeedback] = useState<{ isCorrect: boolean; pointsEarned: number } | null>(null)
+  const [feedback, setFeedback] = useState<{ isCorrect: boolean; pointsEarned: number; isPoll?: boolean } | null>(null)
   const [correctAnswer, setCorrectAnswer] = useState<string | null>(null)
+  const [pollResults, setPollResults] = useState<{ optionId: string; text: string; count: number; percentage: number }[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [participantId, setParticipantId] = useState('')
   const [playerToken, setPlayerToken] = useState('')
 
-  // Player Paced local tracking
   const [localQuestionIndex, setLocalQuestionIndex] = useState<number>(-1)
   const [totalQuestions, setTotalQuestions] = useState<number>(0)
   const [isPlayerPaced, setIsPlayerPaced] = useState<boolean>(false)
+  const [startCountdown, setStartCountdown] = useState<number | null>(null)
 
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const startTimeRef = useRef<number>(0)
@@ -77,10 +78,12 @@ export default function PlayerGameScreen() {
   const playerTokenRef = useRef('')
   const localIndexRef = useRef(-1)
   const totalQuestionsRef = useRef(0)
+  const startSequenceRef = useRef(false)
   const selectedAnswerRef = useRef<string | null>(null)
   const shortAnswerTextRef = useRef('')
   const pinPositionRef = useRef<{ x: number; y: number } | null>(null)
   const correctAnswerRef = useRef<string | null>(null)
+  const pendingFeedbackRef = useRef<{ isCorrect: boolean; pointsEarned: number; isPoll?: boolean } | null>(null)
 
   useEffect(() => { isPlayerPacedRef.current = isPlayerPaced }, [isPlayerPaced])
   useEffect(() => { correctAnswerRef.current = correctAnswer }, [correctAnswer])
@@ -93,12 +96,72 @@ export default function PlayerGameScreen() {
   useEffect(() => { shortAnswerTextRef.current = shortAnswerText }, [shortAnswerText])
   useEffect(() => { pinPositionRef.current = pinPosition }, [pinPosition])
 
+  const resetAnswerInputs = useCallback((_question?: Question | null) => {
+    setSelectedAnswer(null)
+    setShortAnswerText('')
+    setPinPosition(null)
+    setFeedback(null)
+    setCorrectAnswer(null)
+    setPollResults(null)
+    pendingFeedbackRef.current = null
+  }, [])
+
   const pinHint = typeof window !== 'undefined'
     ? sessionStorage.getItem(`pin_code_${sessionId}`) || undefined
     : undefined
   const { connected, send, on } = useWebSocket(sessionId, pinHint)
 
-  // Load initial game state
+  const runStartCountdown = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      setStartCountdown(3)
+      let currentCount = 3
+      const interval = setInterval(() => {
+        currentCount -= 1
+        if (currentCount > 0) {
+          setStartCountdown(currentCount)
+        } else if (currentCount === 0) {
+          setStartCountdown(0)
+        } else {
+          clearInterval(interval)
+          setStartCountdown(null)
+          resolve()
+        }
+      }, 1000)
+    })
+  }, [])
+
+  const applyQuestion = useCallback((question: Question, index?: number) => {
+    if (typeof question.total === 'number' && question.total > 0) {
+      setTotalQuestions(question.total)
+    }
+    if (typeof index === 'number') {
+      setLocalQuestionIndex(index)
+    } else if (typeof question.index === 'number') {
+      setLocalQuestionIndex(question.index)
+    }
+    setCurrentQuestion(question)
+    setTimeLeft(question?.timeLimit || 30)
+    startTimeRef.current = Date.now()
+    setSubmitted(false)
+    submittingRef.current = false
+    resetAnswerInputs(question)
+  }, [resetAnswerInputs])
+
+  const loadSoloFirstQuestion = useCallback(async (pToken: string) => {
+    const question = await getQuestionByIndex(sessionId, 0, pToken || undefined)
+    if (!question) return
+    applyQuestion(question, 0)
+  }, [sessionId, applyQuestion])
+
+  const beginGameFromLobby = useCallback(async (opts: { playerPaced: boolean; pToken: string }) => {
+    if (startSequenceRef.current) return
+    startSequenceRef.current = true
+    await runStartCountdown()
+    if (opts.playerPaced) {
+      await loadSoloFirstQuestion(opts.pToken)
+    }
+  }, [runStartCountdown, loadSoloFirstQuestion])
+
   useEffect(() => {
     const loadGameState = async () => {
       try {
@@ -131,30 +194,38 @@ export default function PlayerGameScreen() {
         }
         setParticipantId(pId)
 
+        const alreadyLive = session.status === 'playing' || session.status === 'active'
+
         if (playerPaced) {
-          if (session.status === 'playing' || session.status === 'active') {
-            setLocalQuestionIndex(0)
-            const question = await getQuestionByIndex(sessionId, 0, pToken || undefined)
-            if (question) {
-              if (typeof question.total === 'number' && question.total > 0) {
-                setTotalQuestions(question.total)
-              } else if (session.questionCount > 0) {
-                setTotalQuestions(session.questionCount)
+          if (alreadyLive) {
+            startSequenceRef.current = true
+            const cq = session.currentQuestion
+            if (!cq?.id) {
+              router.push(`/results/${sessionId}`)
+              return
+            }
+            const idx = typeof cq.index === 'number' ? cq.index : 0
+            try {
+              const question = await getQuestionByIndex(sessionId, idx, pToken || undefined)
+              if (question) {
+                applyQuestion(question, idx)
+                if (session.questionCount > 0 && !(typeof question.total === 'number' && question.total > 0)) {
+                  setTotalQuestions(session.questionCount)
+                }
               }
-              setCurrentQuestion(question)
-              setTimeLeft(question?.timeLimit || 30)
-              startTimeRef.current = Date.now()
+            } catch (e: any) {
+              const msg = String(e?.message || '')
+              if (msg.includes('NO_MORE_QUESTIONS') || msg === 'ROOM_FINISHED') {
+                router.push(`/results/${sessionId}`)
+              }
             }
           } else {
             setCurrentQuestion(null)
           }
-        } else {
-          if (session.currentQuestionIndex !== undefined && session.currentQuestionIndex >= 0) {
-            const question = await getQuestionByIndex(sessionId, session.currentQuestionIndex, pToken || undefined)
-            setCurrentQuestion(question)
-            setTimeLeft(question?.timeLimit || 30)
-            startTimeRef.current = Date.now()
-          }
+        } else if (session.currentQuestionIndex !== undefined && session.currentQuestionIndex >= 0) {
+          startSequenceRef.current = true
+          const question = await getQuestionByIndex(sessionId, session.currentQuestionIndex, pToken || undefined)
+          if (question) applyQuestion(question, session.currentQuestionIndex)
         }
       } catch (error) {
         console.error('Error loading game state:', error)
@@ -165,9 +236,8 @@ export default function PlayerGameScreen() {
     }
 
     loadGameState()
-  }, [sessionId, router])
+  }, [sessionId, router, applyQuestion])
 
-  // Poll game state — keeps classic mode in sync even if the WebSocket next_question event is missed
   useEffect(() => {
     if (loading) return
 
@@ -192,20 +262,13 @@ export default function PlayerGameScreen() {
         if (session.status !== 'playing' && session.status !== 'active') return
 
         if (playerPaced) {
-          if (currentQuestion) return
-          setLocalQuestionIndex(0)
-          const question = await getQuestionByIndex(sessionId, 0, pToken || undefined)
-          if (cancelled || !question) return
-          setCurrentQuestion(question)
-          setTimeLeft(question?.timeLimit || 30)
-          startTimeRef.current = Date.now()
-          setSubmitted(false)
-          submittingRef.current = false
-          setFeedback(null)
-          setCorrectAnswer(null)
-          setSelectedAnswer(null)
-          setShortAnswerText('')
-          setPinPosition(null)
+          if (currentQuestionRef.current || startSequenceRef.current) return
+          await beginGameFromLobby({ playerPaced: true, pToken })
+          return
+        }
+
+        if (!startSequenceRef.current && (session.currentQuestionIndex === undefined || session.currentQuestionIndex < 0)) {
+          await beginGameFromLobby({ playerPaced: false, pToken })
           return
         }
 
@@ -218,18 +281,8 @@ export default function PlayerGameScreen() {
         )
         if (cancelled || !question) return
 
-        // Only switch question if the server question differs from the local one
-        if (!currentQuestion || currentQuestion.id !== question.id) {
-          setCurrentQuestion(question)
-          setTimeLeft(question?.timeLimit || 30)
-          startTimeRef.current = Date.now()
-          setSubmitted(false)
-          submittingRef.current = false
-          setFeedback(null)
-          setCorrectAnswer(null)
-          setSelectedAnswer(null)
-          setShortAnswerText('')
-          setPinPosition(null)
+        if (currentQuestionRef.current?.id !== question.id) {
+          applyQuestion(question, session.currentQuestionIndex)
         }
       } catch (e) {
         console.error('Player lobby poll failed', e)
@@ -242,26 +295,16 @@ export default function PlayerGameScreen() {
       cancelled = true
       clearInterval(id)
     }
-  }, [loading, currentQuestion, sessionId, router])
+  }, [loading, sessionId, router, beginGameFromLobby, applyQuestion])
 
-  // Handle WebSocket messages
   useEffect(() => {
     if (!connected) return
 
     const unsubQuestion = on('next_question', async (data) => {
       if (isPlayerPacedRef.current) return
-      setSubmitted(false)
-      submittingRef.current = false
-      setFeedback(null)
-      setCorrectAnswer(null)
-      setSelectedAnswer(null)
-      setShortAnswerText('')
-      setPinPosition(null)
       try {
         const question = await getQuestionByIndex(sessionId, data.questionIndex, playerTokenRef.current || undefined)
-        setCurrentQuestion(question)
-        setTimeLeft(question?.timeLimit || 30)
-        startTimeRef.current = Date.now()
+        if (question) applyQuestion(question, data.questionIndex)
       } catch (e: any) {
         if (e.message === 'ROOM_FINISHED') {
           router.push(`/results/${sessionId}`)
@@ -276,6 +319,20 @@ export default function PlayerGameScreen() {
       setSubmitted(true)
       if (data?.correct_answer) {
         setCorrectAnswer(String(data.correct_answer))
+      }
+      if (Array.isArray(data?.option_stats)) {
+        setPollResults(
+          data.option_stats.map((s: any) => ({
+            optionId: s.option_id,
+            text: s.text,
+            count: s.count,
+            percentage: s.percentage,
+          }))
+        )
+      }
+      if (pendingFeedbackRef.current) {
+        setFeedback(pendingFeedbackRef.current)
+        pendingFeedbackRef.current = null
       }
     })
 
@@ -293,22 +350,7 @@ export default function PlayerGameScreen() {
         setIsPlayerPaced(playerPaced)
         setGameState((prev: any) => ({ ...(prev || {}), ...session, status: 'playing' }))
 
-        if (playerPaced) {
-          setLocalQuestionIndex(0)
-          const question = await getQuestionByIndex(sessionId, 0, pToken || undefined)
-          if (question) {
-            setCurrentQuestion(question)
-            setTimeLeft(question?.timeLimit || 30)
-            startTimeRef.current = Date.now()
-            setSubmitted(false)
-            submittingRef.current = false
-            setFeedback(null)
-            setCorrectAnswer(null)
-            setSelectedAnswer(null)
-            setShortAnswerText('')
-            setPinPosition(null)
-          }
-        }
+        await beginGameFromLobby({ playerPaced, pToken })
       } catch (e: any) {
         if (e.message === 'ROOM_FINISHED') {
           router.push(`/results/${sessionId}`)
@@ -324,7 +366,7 @@ export default function PlayerGameScreen() {
       unsubEnd()
       unsubGameStart()
     }
-  }, [connected, on, sessionId, router])
+  }, [connected, on, sessionId, router, beginGameFromLobby, applyQuestion])
 
   const handleSubmitAnswer = useCallback(async (answerVal: string | null) => {
     const pId = participantIdRef.current
@@ -335,21 +377,31 @@ export default function PlayerGameScreen() {
     setSubmitted(true)
     const responseTimeMs = Date.now() - startTimeRef.current
     const timeSpent = Math.floor(responseTimeMs / 1000)
-    // Empty string = timed out with no selection (backend accepts & awards 0)
     const optionToSubmit = answerVal ?? ''
+    const isPoll = q.type === 'poll'
 
     try {
       const res = await submitAnswer(sessionId, pId, q.id, optionToSubmit, timeSpent, responseTimeMs, playerTokenRef.current)
       if (res && res.error) {
-        // Stay on the question for late/timeout errors — do NOT kick to results mid-game
         if (res.error.includes('not active') || res.error.includes('exceeded') || res.error.includes('expired')) {
-          setFeedback({ isCorrect: false, pointsEarned: 0 })
+          const fb = { isCorrect: false, pointsEarned: 0, isPoll }
+          if (isPlayerPacedRef.current || isPoll) {
+            setFeedback(fb)
+          } else {
+            pendingFeedbackRef.current = fb
+          }
         }
       } else if (res) {
-        setFeedback({
-          isCorrect: !!res.is_correct,
-          pointsEarned: Number(res.points_earned || 0)
-        })
+        const fb = {
+          isCorrect: isPoll ? false : !!res.is_correct,
+          pointsEarned: Number(res.points_earned || 0),
+          isPoll: isPoll || !!res.recorded,
+        }
+        if (isPlayerPacedRef.current || isPoll) {
+          setFeedback(fb)
+        } else {
+          pendingFeedbackRef.current = fb
+        }
       }
 
       send({
@@ -364,8 +416,6 @@ export default function PlayerGameScreen() {
         setTimeout(async () => {
           const nextIndex = localIndexRef.current + 1
           const knownTotal = totalQuestionsRef.current
-          // If total is unknown/0 (mis-counted), still try to load next question
-          // instead of ending the game early.
           if (knownTotal > 0 && nextIndex >= knownTotal) {
             router.push(`/results/${sessionId}`)
             return
@@ -376,23 +426,15 @@ export default function PlayerGameScreen() {
               router.push(`/results/${sessionId}`)
               return
             }
-            if (typeof nextQ.total === 'number' && nextQ.total > 0) {
-              setTotalQuestions(nextQ.total)
-            }
-            setLocalQuestionIndex(nextIndex)
-            setSubmitted(false)
-            setFeedback(null)
-            setCorrectAnswer(null)
-            setSelectedAnswer(null)
-            setShortAnswerText('')
-            setPinPosition(null)
-            submittingRef.current = false
-            setCurrentQuestion(nextQ)
-            setTimeLeft(nextQ?.timeLimit || 30)
-            startTimeRef.current = Date.now()
+            applyQuestion(nextQ, nextIndex)
           } catch (e: any) {
             const msg = String(e?.message || '')
-            if (msg === 'ROOM_FINISHED' || msg.toLowerCase().includes('not found')) {
+            if (
+              msg === 'ROOM_FINISHED' ||
+              msg.includes('NO_MORE_QUESTIONS') ||
+              msg.toLowerCase().includes('not found') ||
+              msg.toLowerCase().includes('not currently active')
+            ) {
               router.push(`/results/${sessionId}`)
               return
             }
@@ -410,9 +452,8 @@ export default function PlayerGameScreen() {
         router.push(`/results/${sessionId}`)
       }
     }
-  }, [sessionId, router, send])
+  }, [sessionId, router, send, applyQuestion])
 
-  // Timer
   useEffect(() => {
     if (!currentQuestion || submitted) return
 
@@ -426,16 +467,17 @@ export default function PlayerGameScreen() {
       if (remaining <= 0) {
         if (timerRef.current) clearInterval(timerRef.current)
         if (!submittingRef.current) {
-          // Prefer whatever the player already selected; empty = no answer / 0 pts
-          const isShort = q.type === 'short_answer'
-          const isPin = q.type === 'pin_answer'
-          const pending = isShort
-            ? (shortAnswerTextRef.current.trim() || null)
-            : isPin
-              ? (pinPositionRef.current
-                  ? `${pinPositionRef.current.x.toFixed(1)},${pinPositionRef.current.y.toFixed(1)}`
-                  : null)
-              : selectedAnswerRef.current
+          const type = q.type
+          let pending: string | null = null
+          if (type === 'short_answer') {
+            pending = shortAnswerTextRef.current.trim() || null
+          } else if (type === 'pin_answer') {
+            pending = pinPositionRef.current
+              ? `${pinPositionRef.current.x.toFixed(1)},${pinPositionRef.current.y.toFixed(1)}`
+              : null
+          } else {
+            pending = selectedAnswerRef.current
+          }
           handleSubmitAnswer(pending)
         }
       }
@@ -446,7 +488,6 @@ export default function PlayerGameScreen() {
     }
   }, [currentQuestion, submitted, handleSubmitAnswer])
 
-  // Leave only on real tab close — not on SPA navigation to results
   useEffect(() => {
     const handleUnload = () => {
       const pToken = sessionStorage.getItem(`player_token_${sessionId}`)
@@ -460,17 +501,31 @@ export default function PlayerGameScreen() {
     }
 
     window.addEventListener('beforeunload', handleUnload)
-
-    return () => {
-      window.removeEventListener('beforeunload', handleUnload)
-    }
+    return () => window.removeEventListener('beforeunload', handleUnload)
   }, [sessionId])
 
   if (loading) {
     return (
       <GameBackground variant="arena">
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-[#9a9eab] text-sm">Entering room…</p>
+          <div className="text-center">
+            <div className="mx-auto h-10 w-10 rounded-full border-2 border-[#2c313d] border-t-[#e85d4c] animate-spin" />
+            <p className="text-sm text-[#9a9eab] mt-4">Loading arena…</p>
+          </div>
+        </div>
+      </GameBackground>
+    )
+  }
+
+  if (startCountdown !== null) {
+    return (
+      <GameBackground variant="arena">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-7xl font-black text-[#f2f0eb] tabular-nums">
+              {startCountdown === 0 ? 'GO' : startCountdown}
+            </p>
+          </div>
         </div>
       </GameBackground>
     )
@@ -480,7 +535,7 @@ export default function PlayerGameScreen() {
     return (
       <GameBackground variant="arena">
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="text-center max-w-sm w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-8">
+          <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-8 text-center">
             <Hourglass className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
             <h1 className="text-xl font-semibold text-[#f2f0eb]">Waiting for the host</h1>
             <p className="text-sm text-[#9a9eab] mt-2 leading-relaxed">
@@ -494,12 +549,19 @@ export default function PlayerGameScreen() {
 
   const isShortAnswer = currentQuestion.type === 'short_answer'
   const isPinAnswer = currentQuestion.type === 'pin_answer'
+  const isPoll = currentQuestion.type === 'poll'
   const answerColors = [
     'bg-[#e85d4c] hover:brightness-110',
     'bg-[#5b8def] hover:brightness-110',
     'bg-[#2dd4bf] hover:brightness-110 text-[#0c1412]',
     'bg-[#f0b429] hover:brightness-110 text-[#1a1408]',
   ]
+
+  const canSubmit = (() => {
+    if (isShortAnswer) return !!shortAnswerText.trim()
+    if (isPinAnswer) return !!pinPosition
+    return !!selectedAnswer
+  })()
 
   return (
     <GameBackground variant="arena">
@@ -631,14 +693,20 @@ export default function PlayerGameScreen() {
                     isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-[#12141a]' : ''
                   } ${submitted && !isSelected ? 'opacity-30' : ''}`}
                 >
-                  <div className="text-base break-words">
-                    {option.optionText}
-                    {option.mediaUrl && (
-                      <div className="mt-2 w-24 h-16 rounded-lg overflow-hidden border border-black/20">
+                  <div className="space-y-2">
+                    {option.optionText ? (
+                      <div className="text-base break-words font-semibold">{option.optionText}</div>
+                    ) : null}
+                    {option.mediaUrl ? (
+                      <div className="w-full max-h-40 rounded-lg overflow-hidden border border-black/20 bg-black/10">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={option.mediaUrl} alt="" className="w-full h-full object-cover" />
+                        <img
+                          src={option.mediaUrl}
+                          alt=""
+                          className="w-full h-full max-h-40 object-contain"
+                        />
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </button>
               )
@@ -659,48 +727,77 @@ export default function PlayerGameScreen() {
                   handleSubmitAnswer(selectedAnswer)
                 }
               }}
-              disabled={
-                isShortAnswer
-                  ? !shortAnswerText.trim()
-                  : isPinAnswer
-                    ? !pinPosition
-                    : !selectedAnswer
-              }
+              disabled={!canSubmit}
               size="lg"
               className="w-full h-12 bg-[#f2f0eb] text-[#12141a] hover:bg-white font-semibold rounded-xl disabled:opacity-30"
             >
-              Submit
+              {isPoll ? 'Vote' : 'Submit'}
               <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           ) : feedback ? (
-            <div
-              className={`rounded-2xl border p-8 text-center space-y-3 ${
-                feedback.isCorrect
-                  ? 'border-[#2dd4bf]/35 bg-[#2dd4bf]/10'
-                  : 'border-[#e85d4c]/35 bg-[#e85d4c]/10'
-              }`}
-            >
-              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#12141a]/40">
-                {feedback.isCorrect ? (
-                  <Check className="w-7 h-7 text-[#2dd4bf]" />
-                ) : (
-                  <XCircle className="w-7 h-7 text-[#e85d4c]" />
-                )}
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-[#f2f0eb]">
-                  {feedback.isCorrect ? 'Correct' : 'Not this time'}
-                </p>
-                <p className="text-sm text-[#9a9eab] mt-1">
-                  +{feedback.pointsEarned} points
-                </p>
-                {correctAnswer && !feedback.isCorrect && !isPinAnswer && (
-                  <p className="text-sm text-[#f2f0eb] mt-2">
-                    Correct answer: <strong className="text-[#2dd4bf]">{correctAnswer}</strong>
+            feedback.isPoll ? (
+              pollResults ? (
+                <div className="rounded-2xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-6 space-y-3">
+                  <p className="text-sm font-semibold text-[#f2f0eb] text-center">Results</p>
+                  {pollResults
+                    .slice()
+                    .sort((a, b) => b.percentage - a.percentage)
+                    .map((r) => (
+                      <div key={r.optionId} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm text-[#f2f0eb]">
+                          <span className="truncate pr-2">{r.text}</span>
+                          <span className="font-semibold tabular-nums">{r.percentage}%</span>
+                        </div>
+                        <div className="h-2.5 rounded-full bg-[#12141a]/40 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[#2dd4bf] transition-all duration-500"
+                            style={{ width: `${r.percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-8 text-center space-y-3">
+                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#12141a]/40">
+                    <Check className="w-7 h-7 text-[#2dd4bf]" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-semibold text-[#f2f0eb]">Vote recorded</p>
+                    <p className="text-sm text-[#9a9eab] mt-1">Thanks — waiting for the host to show results</p>
+                  </div>
+                </div>
+              )
+            ) : (
+              <div
+                className={`rounded-2xl border p-8 text-center space-y-3 ${
+                  feedback.isCorrect
+                    ? 'border-[#2dd4bf]/35 bg-[#2dd4bf]/10'
+                    : 'border-[#e85d4c]/35 bg-[#e85d4c]/10'
+                }`}
+              >
+                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#12141a]/40">
+                  {feedback.isCorrect ? (
+                    <Check className="w-7 h-7 text-[#2dd4bf]" />
+                  ) : (
+                    <XCircle className="w-7 h-7 text-[#e85d4c]" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-lg font-semibold text-[#f2f0eb]">
+                    {feedback.isCorrect ? 'Correct' : 'Not this time'}
                   </p>
-                )}
+                  <p className="text-sm text-[#9a9eab] mt-1">
+                    +{feedback.pointsEarned} points
+                  </p>
+                  {correctAnswer && !feedback.isCorrect && !isPinAnswer && !isPoll && (
+                    <p className="text-sm text-[#f2f0eb] mt-2">
+                      Correct answer: <strong className="text-[#2dd4bf]">{correctAnswer}</strong>
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
+            )
           ) : (
             <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 text-center text-sm text-[#9a9eab]">
               Answer locked in

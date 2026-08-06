@@ -4,7 +4,7 @@ export const dashboardTour: TourOptions = {
   steps: [
     {
       element: '[data-tour="dashboard-header"]',
-      title: 'Chào mừng đến Kovio',
+      title: 'Chào mừng đến quizzZone',
       content: 'Đây là bảng điều khiển chính. Bạn có thể tạo quiz, nhân bản và theo dõi kết quả từ đây.',
       position: 'bottom',
     },

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { XCircle, MapPin } from 'lucide-react'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { QRCodeComponent } from '@/components/qr-code'
 import {
@@ -59,7 +60,7 @@ export default function HostGameScreen() {
   const [gameState, setGameState] = useState<any>(null)
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null)
   const [leaderboard, setLeaderboard] = useState<any[]>([])
-  const [answerStats, setAnswerStats] = useState<any[]>([])
+  const [answerStats, setAnswerStats] = useState<any>([])
   const [loading, setLoading] = useState(true)
   const [gameStarted, setGameStarted] = useState(false)
   const [showAnswers, setShowAnswers] = useState(false)
@@ -67,6 +68,7 @@ export default function HostGameScreen() {
   const [actionLoading, setActionLoading] = useState(false)
   const [privacyLoading, setPrivacyLoading] = useState(false)
   const [accessError, setAccessError] = useState<ResolvedApiError | null>(null)
+  const [startCountdown, setStartCountdown] = useState<number | null>(null)
 
   const { connected, send, on } = useWebSocket(sessionId, gameState?.sessionCode)
 
@@ -277,29 +279,43 @@ export default function HostGameScreen() {
       // 1. Start the game (solo: assigns each player's first question + publishes game:started)
       await startGameSession(sessionId)
 
-      // 2. Classic only: advance host-controlled question index
-      if (!isSolo) {
-        await updateGameSessionState(sessionId, 'next', 0)
-      }
+      // Shared 3-2-1-GO start animation (classic + solo)
+      setStartCountdown(3)
+      let currentCount = 3
+      const interval = setInterval(async () => {
+        currentCount -= 1
+        if (currentCount > 0) {
+          setStartCountdown(currentCount)
+        } else if (currentCount === 0) {
+          setStartCountdown(0) // Show "GO!"
+        } else {
+          clearInterval(interval)
+          setStartCountdown(null)
 
-      setGameStarted(true)
-      setGameState((prev: any) =>
-        prev
-          ? {
-              ...prev,
-              currentQuestionIndex: isSolo ? 0 : 0,
-              status: 'playing',
-            }
-          : prev
-      )
+          if (!isSolo) {
+            // Classic: advance to first question in DB and notify players
+            await updateGameSessionState(sessionId, 'next', 0)
+          }
 
-      const question = await getQuestionByIndex(sessionId, 0)
-      setCurrentQuestion(question)
+          setGameStarted(true)
+          setGameState((prev: any) =>
+            prev
+              ? {
+                  ...prev,
+                  currentQuestionIndex: 0,
+                  status: 'playing',
+                }
+              : prev
+          )
+          const question = await getQuestionByIndex(sessionId, 0)
+          setCurrentQuestion(question)
 
-      const lb = await getLeaderboard(sessionId)
-      setLeaderboard(lb)
-      const session = await getGameSession(sessionId)
-      setGameState(session)
+          const lb = await getLeaderboard(sessionId)
+          setLeaderboard(lb)
+          const session = await getGameSession(sessionId)
+          setGameState(session)
+        }
+      }, 1000)
     } catch (error) {
       console.error('Error starting game:', error)
     } finally {
@@ -321,6 +337,7 @@ export default function HostGameScreen() {
       const question = await getQuestionByIndex(sessionId, nextIndex)
       setCurrentQuestion(question)
       setShowAnswers(false)
+      setAnswerStats([])
 
       const lb = await getLeaderboard(sessionId)
       setLeaderboard(lb)
@@ -342,6 +359,11 @@ export default function HostGameScreen() {
 
       const lb = await getLeaderboard(sessionId)
       setLeaderboard(lb)
+
+      if (currentQuestion) {
+        const stats = await getAnswerStats(sessionId, currentQuestion.id)
+        setAnswerStats(stats)
+      }
 
       send({ type: 'reveal_answer' })
     } catch (error) {
@@ -419,6 +441,26 @@ export default function HostGameScreen() {
 
   return (
     <GameBackground variant="arena">
+      {startCountdown !== null && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gradient-to-br from-[#12141a] via-[#1a1d26] to-[#12141a] select-none">
+          <div className="text-center space-y-8">
+            <p className="text-xl md:text-2xl font-bold tracking-wider text-indigo-400 uppercase animate-pulse">
+              {startCountdown === 0 ? 'Chuẩn bị...' : 'Trận đấu bắt đầu sau'}
+            </p>
+            <div className="relative h-48 flex items-center justify-center">
+              <span 
+                key={startCountdown}
+                className="text-9xl md:text-[12rem] font-extrabold text-[#e85d4c] drop-shadow-[0_0_50px_rgba(232,93,76,0.3)] animate-bounce inline-block select-none"
+              >
+                {startCountdown === 0 ? 'GO!' : startCountdown}
+              </span>
+            </div>
+            <p className="text-sm text-gray-500 max-w-xs mx-auto leading-relaxed">
+              {startCountdown === 0 ? 'Chúc các bạn may mắn!' : 'Hãy sẵn sàng trả lời nhanh để đạt điểm tối đa!'}
+            </p>
+          </div>
+        </div>
+      )}
       <div className="flex-1 p-4 md:p-8">
 
       <div className="max-w-7xl mx-auto space-y-8 z-10 relative">
@@ -703,37 +745,93 @@ export default function HostGameScreen() {
                               <h2 className="text-2xl md:text-3xl font-extrabold text-white leading-snug">
                                 {parsedContent.text}
                               </h2>
-                              {parsedContent.mediaUrl && (
+                              {parsedContent.mediaUrl && currentQuestion.type !== 'pin_answer' && (
                                 <div className="mt-4 w-full aspect-video max-h-64 rounded-2xl overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center">
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
                                   <img src={parsedContent.mediaUrl} alt="Question media" className="w-full h-full object-contain" />
                                 </div>
                               )}
 
-                              {/* Answer Options Grid or Short Answer Banner */}
+                              {/* Mode-specific answer panel */}
                           {currentQuestion.type === 'short_answer' ? (
                             <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-8 text-center backdrop-blur-md shadow-lg">
                               {showAnswers ? (
                                 <div className="space-y-4">
-                                  <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">Correct Answer (Bind Choice)</span>
-                                  <h3 className="text-4xl font-black text-emerald-400 animate-pulse tracking-wide uppercase">
+                                  <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">Correct Answer</span>
+                                  <h3 className="text-4xl font-black text-emerald-400 tracking-wide">
                                     {currentQuestion.correctAnswer || 'No Answer Set'}
                                   </h3>
-                                  <p className="text-gray-400 text-sm">Case-insensitive text comparison completed successfully</p>
+                                  {answerStats?.mode === 'short_answer' && answerStats.entries?.length > 0 && (
+                                    <div className="mt-4 space-y-2 text-left max-w-md mx-auto">
+                                      {answerStats.entries.slice(0, 5).map((entry: any) => (
+                                        <div key={entry.text} className="flex justify-between text-sm text-gray-300 bg-black/20 rounded-lg px-3 py-2">
+                                          <span className="truncate">{entry.text}</span>
+                                          <span className="text-white font-bold">{entry.count}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               ) : (
                                 <div className="space-y-3 py-6">
-                                  <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center text-xl mx-auto animate-bounce">
-                                    ⌨️
-                                  </div>
                                   <h3 className="text-xl font-bold text-white">Short Answer Mode</h3>
                                   <p className="text-gray-400 text-sm">Players are typing their answers. Results will be shown on Reveal.</p>
                                 </div>
                               )}
                             </div>
+                          ) : currentQuestion.type === 'pin_answer' ? (
+                            <div className="mt-8 space-y-4">
+                              {(() => {
+                                const media = parseQuestionContent(currentQuestion.questionText).mediaUrl
+                                const pinStats = answerStats?.mode === 'pin' ? answerStats : null
+                                const target = String(currentQuestion.correctAnswer || pinStats?.correctAnswer || '50,50').split(',')
+                                const tx = parseFloat(target[0]) || 50
+                                const ty = parseFloat(target[1]) || 50
+                                if (!media) {
+                                  return (
+                                    <div className="bg-white/5 border border-white/10 rounded-2xl p-8 text-center text-gray-400">
+                                      Add an image to this pin question in the quiz editor.
+                                    </div>
+                                  )
+                                }
+                                return (
+                                  <div className="space-y-3">
+                                    <p className="text-sm text-gray-400 flex items-center gap-1.5">
+                                      <MapPin className="w-4 h-4 text-[#e85d4c]" />
+                                      {pinStats ? `${pinStats.total} pin${pinStats.total === 1 ? '' : 's'} placed` : 'Waiting for pins…'}
+                                      {showAnswers && pinStats ? ` · ${pinStats.correctCount} in range` : ''}
+                                    </p>
+                                    <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/10 bg-black/40">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={media} alt="" className="w-full h-full object-contain" />
+                                      {(pinStats?.pins || []).map((pin: any, i: number) => (
+                                        <div
+                                          key={`pin-${i}`}
+                                          className={`absolute w-4 h-4 rounded-full border-2 pointer-events-none ${
+                                            showAnswers
+                                              ? pin.isCorrect
+                                                ? 'bg-emerald-400/50 border-emerald-300'
+                                                : 'bg-rose-400/40 border-rose-300'
+                                              : 'bg-[#e85d4c]/40 border-[#e85d4c]'
+                                          }`}
+                                          style={{ left: `${pin.x}%`, top: `${pin.y}%`, transform: 'translate(-50%, -50%)' }}
+                                        />
+                                      ))}
+                                      {showAnswers && (
+                                        <div
+                                          className="absolute w-10 h-10 rounded-full border-2 border-dashed border-emerald-400/80 pointer-events-none"
+                                          style={{ left: `${tx}%`, top: `${ty}%`, transform: 'translate(-50%, -50%)' }}
+                                          title="Target"
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })()}
+                            </div>
                           ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
-                              {currentQuestion.options.map((option, index) => {
+                              {(currentQuestion.options || []).map((option, index) => {
                                 const badges = [
                                   'from-rose-500 to-pink-600 text-white shadow-rose-500/20',
                                   'from-blue-500 to-indigo-600 text-white shadow-blue-500/20',
@@ -743,41 +841,43 @@ export default function HostGameScreen() {
                                 const icons = ['▲', '◆', '●', '■']
                                 const badgeColor = badges[index % badges.length]
                                 const icon = icons[index % icons.length]
-                                const stat = answerStats.find((s) => s.optionId === option.id)
-                                const isCorrect = option.isCorrect
-                                const shouldHighlight = showAnswers && isCorrect
-                                const isDimmed = showAnswers && !isCorrect
+                                const statsList = Array.isArray(answerStats) ? answerStats : []
+                                const stat = statsList.find((s: any) => s.optionId === option.id)
+                                const isPoll = currentQuestion.type === 'poll'
+                                const isCorrect = !isPoll && option.isCorrect
+                                const shouldHighlight = showAnswers && isCorrect && !isPoll
+                                const isDimmed = showAnswers && !isCorrect && !isPoll
 
                                 return (
                                   <div
                                     key={`option-${option.id || index}-${index}`}
                                     className={`relative p-5 rounded-2xl border transition-all duration-500 overflow-hidden bg-white/5 backdrop-blur-md ${
-                                      shouldHighlight 
-                                        ? 'border-emerald-400/80 ring-2 ring-emerald-400/25 scale-[1.01] shadow-[0_0_20px_rgba(52,211,153,0.15)] bg-emerald-500/5' 
+                                      shouldHighlight
+                                        ? 'border-emerald-400/80 ring-2 ring-emerald-400/25 scale-[1.01] shadow-[0_0_20px_rgba(52,211,153,0.15)] bg-emerald-500/5'
                                         : 'border-white/5'
                                     } ${
                                       isDimmed ? 'opacity-20 scale-[0.99]' : ''
                                     }`}
                                   >
-                                    {/* Inner content */}
                                     <div className="relative z-10 space-y-4">
                                       <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3">
-                                          {/* Custom Shaped Badge Indicator */}
                                           <div className={`flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-r font-black text-sm shadow-md ${badgeColor}`}>
                                             {icon}
                                           </div>
-                                          <div className="flex flex-col gap-2">
-                                            <div className="text-white font-bold text-base leading-snug">{option.optionText}</div>
-                                            {option.mediaUrl && (
-                                              <div className="w-24 h-16 rounded-lg overflow-hidden border border-white/10 bg-black/40">
+                                          <div className="flex flex-col gap-2 min-w-0">
+                                            {option.optionText ? (
+                                              <div className="text-white font-bold text-base leading-snug">{option.optionText}</div>
+                                            ) : null}
+                                            {option.mediaUrl ? (
+                                              <div className="w-36 h-24 rounded-lg overflow-hidden border border-white/10 bg-black/40">
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img src={option.mediaUrl} alt="Option media" className="w-full h-full object-cover" />
+                                                <img src={option.mediaUrl} alt="Option media" className="w-full h-full object-contain" />
                                               </div>
-                                            )}
+                                            ) : null}
                                           </div>
                                         </div>
-                                        
+
                                         {stat && (
                                           <div className="text-right">
                                             <span className="text-base font-black text-white">{stat.count}</span>
@@ -786,15 +886,12 @@ export default function HostGameScreen() {
                                         )}
                                       </div>
 
-                                      {/* Progress bar visualizer for answers */}
                                       {stat && (
                                         <div className="w-full bg-black/40 rounded-full h-1.5 overflow-hidden">
                                           <div
                                             className="bg-white/60 h-full rounded-full transition-all duration-1000"
-                                            style={{
-                                              width: `${stat.percentage}%`,
-                                            }}
-                                          ></div>
+                                            style={{ width: `${stat.percentage}%` }}
+                                          />
                                         </div>
                                       )}
 
@@ -814,7 +911,7 @@ export default function HostGameScreen() {
                     })()}
 
                         {/* Actions Section */}
-                        <div className="pt-2">
+                        <div className="pt-2 space-y-3">
                           {!showAnswers ? (
                             <Button
                               onClick={handleRevealAnswer}
@@ -822,7 +919,7 @@ export default function HostGameScreen() {
                               size="lg"
                               className="w-full bg-white text-black hover:bg-white/90 disabled:bg-white/10 disabled:text-gray-500 h-14 text-lg font-black rounded-2xl shadow-[0_4px_20px_rgba(255,255,255,0.08)] hover:shadow-[0_4px_25px_rgba(255,255,255,0.15)] transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer border-none"
                             >
-                              Reveal Correct Answer 👁️
+                              {currentQuestion.type === 'poll' ? 'Show Poll Results' : 'Reveal Correct Answer'}
                             </Button>
                           ) : (
                             <Button
@@ -840,6 +937,15 @@ export default function HostGameScreen() {
                                 : ((gameState?.currentQuestionIndex || 0) + 1 < totalQuestions ? 'Next Battle Question ➔' : 'End Battle & Show Podium 🏆')}
                             </Button>
                           )}
+                          <Button
+                            onClick={handleEndGame}
+                            disabled={actionLoading}
+                            variant="outline"
+                            className="w-full border-red-500/20 hover:border-red-500/50 text-red-400 hover:text-red-300 hover:bg-red-500/5 h-12 text-sm font-bold rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-2"
+                          >
+                            <XCircle className="w-4 h-4" />
+                            End Game Quickly
+                          </Button>
                         </div>
                       </>
                     )}

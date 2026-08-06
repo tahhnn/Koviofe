@@ -48,6 +48,8 @@ export async function submitAnswer(
       points: data.points_earned,
       is_correct: data.is_correct,
       points_earned: data.points_earned,
+      recorded: !!data.recorded,
+      question_type: data.question_type,
     }
   } catch (e: any) {
     console.error('Error submitting answer: ', e)
@@ -73,7 +75,8 @@ export async function getQuestionByIndex(sessionId: string, questionIndex: numbe
       questionText: data.content,
       timeLimit: data.duration,
       displayOrder: data.order,
-      options: parsedOptsToDrizzle(opts, ''),
+      // Never trust isCorrect from the player endpoint — strip answer keys.
+      options: parsedOptsToDrizzle(opts, '', true),
       type: data.type,
       index: typeof data.index === 'number' ? data.index : questionIndex,
       total: typeof data.total === 'number' ? data.total : undefined,
@@ -108,11 +111,12 @@ export async function getQuestionByIndex(sessionId: string, questionIndex: numbe
   }
 }
 
-function parsedOptsToDrizzle(parsedOpts: any[], correctAnswer: string) {
+function parsedOptsToDrizzle(parsedOpts: any[], correctAnswer: string, stripCorrectness = false) {
   return parsedOpts.map((o: any) => ({
     id: o.id,
-    optionText: o.text,
-    isCorrect: o.isCorrect ?? (o.id === correctAnswer),
+    optionText: o.text ?? o.optionText ?? '',
+    isCorrect: stripCorrectness ? false : (o.isCorrect ?? (o.id === correctAnswer)),
+    mediaUrl: o.mediaUrl || '',
   }))
 }
 
@@ -177,6 +181,43 @@ export async function getAnswerStats(sessionId: string, questionId: string) {
 
     const relevantAnswers = answers.filter((a: any) => String(a.question_id) === questionId)
 
+    if (question.type === 'pin_answer') {
+      const pins = relevantAnswers
+        .map((a: any) => {
+          const parts = String(a.selected_option || '').split(',')
+          const x = parseFloat(parts[0])
+          const y = parseFloat(parts[1])
+          if (Number.isNaN(x) || Number.isNaN(y)) return null
+          return { x, y, isCorrect: !!a.is_correct }
+        })
+        .filter(Boolean)
+      return {
+        mode: 'pin' as const,
+        correctAnswer: question.correct_answer || '50,50',
+        pins,
+        total: relevantAnswers.length,
+        correctCount: relevantAnswers.filter((a: any) => a.is_correct).length,
+      }
+    }
+
+    if (question.type === 'short_answer') {
+      const texts = relevantAnswers.map((a: any) => String(a.selected_option || '').trim()).filter(Boolean)
+      const counts: Record<string, number> = {}
+      for (const t of texts) {
+        const key = t.toLowerCase()
+        counts[key] = (counts[key] || 0) + 1
+      }
+      return {
+        mode: 'short_answer' as const,
+        correctAnswer: question.correct_answer,
+        entries: Object.entries(counts)
+          .map(([text, count]) => ({ text, count }))
+          .sort((a, b) => b.count - a.count),
+        total: relevantAnswers.length,
+        correctCount: relevantAnswers.filter((a: any) => a.is_correct).length,
+      }
+    }
+
     return parsedOpts.map((option: any) => {
       const count = relevantAnswers.filter((a: any) => a.selected_option === option.id).length
       const percentage = relevantAnswers.length > 0 ? Math.round((count / relevantAnswers.length) * 100) : 0
@@ -185,7 +226,7 @@ export async function getAnswerStats(sessionId: string, questionId: string) {
         optionText: option.text,
         count,
         percentage,
-        isCorrect: option.isCorrect ?? (option.id === question.correct_answer),
+        isCorrect: question.type === 'poll' ? false : (option.isCorrect ?? (option.id === question.correct_answer)),
       }
     })
   } catch (e) {

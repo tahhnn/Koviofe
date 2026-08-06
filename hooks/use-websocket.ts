@@ -20,6 +20,17 @@ function getApiBase(): string {
 function getCentrifugoWsUrl(): string {
   if (process.env.NEXT_PUBLIC_CENTRIFUGO_URL) {
     const raw = process.env.NEXT_PUBLIC_CENTRIFUGO_URL.replace(/\/$/, '')
+    
+    // Support relative paths (e.g. "/centrifugo" or "/centrifugo/connection/websocket")
+    if (raw.startsWith('/')) {
+      if (typeof window !== 'undefined') {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        const path = raw.includes('/connection/websocket') ? raw : `${raw}/connection/websocket`
+        return `${protocol}//${window.location.host}${path}`
+      }
+      return `ws://localhost${raw.includes('/connection/websocket') ? raw : `${raw}/connection/websocket`}`
+    }
+
     if (raw.startsWith('ws:') || raw.startsWith('wss:')) {
       return raw.includes('/connection/websocket') ? raw : `${raw}/connection/websocket`
     }
@@ -29,7 +40,10 @@ function getCentrifugoWsUrl(): string {
   }
   if (typeof window !== 'undefined') {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.hostname}:8000/connection/websocket`
+    if (window.location.port === '3000') {
+      return `${protocol}//${window.location.hostname}:8000/connection/websocket`
+    }
+    return `${protocol}//${window.location.host}/centrifugo/connection/websocket`
   }
   return 'ws://localhost:8000/connection/websocket'
 }

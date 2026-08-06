@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { authClient } from '@/lib/auth-client'
-import { getMyQuizzes, createQuiz, deleteQuiz, getDashboardStats, createQuizFromMockTemplate, duplicateQuiz } from '@/app/actions/quizzes'
+import { getMyQuizzes, createQuiz, deleteQuiz, getDashboardStats, createQuizFromMockTemplate, duplicateQuiz, updateQuiz } from '@/app/actions/quizzes'
 import { GameBackground } from '@/components/game-background'
 import { useToast } from '@/components/ui/toast'
 import { Input } from '@/components/ui/input'
@@ -30,6 +30,7 @@ import {
   Hourglass,
   Calendar,
   Copy,
+  X,
 } from 'lucide-react'
 import { BrandMark } from '@/components/brand-mark'
 import { TourButton } from '@/components/tour-button'
@@ -46,6 +47,44 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'list' | 'quick-create'>('list')
   const [quickCreating, setQuickCreating] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  // Quick Edit Quiz States
+  const [editQuizOpen, setEditQuizOpen] = useState(false)
+  const [selectedQuizId, setSelectedQuizId] = useState('')
+  const [editQuizTitle, setEditQuizTitle] = useState('')
+  const [editQuizDescription, setEditQuizDescription] = useState('')
+
+  const handleOpenEditQuiz = (quiz: any) => {
+    setSelectedQuizId(quiz.id)
+    setEditQuizTitle(quiz.title)
+    setEditQuizDescription(quiz.description || '')
+    setEditQuizOpen(true)
+  }
+
+  const handleSaveQuizInfo = async () => {
+    if (!editQuizTitle.trim()) {
+      toast.error('Lỗi', 'Tên quiz không được để trống.')
+      return
+    }
+    setActionLoading(`edit-${selectedQuizId}`)
+    try {
+      await updateQuiz(selectedQuizId, editQuizTitle, editQuizDescription)
+      setQuizzes((prev: any) =>
+        prev.map((q: any) =>
+          q.id === selectedQuizId
+            ? { ...q, title: editQuizTitle, description: editQuizDescription }
+            : q
+        )
+      )
+      setEditQuizOpen(false)
+      toast.success('Đã cập nhật thông tin quiz thành công!')
+    } catch (error) {
+      console.error('Error updating quiz info:', error)
+      toast.error('Lỗi', 'Không thể cập nhật thông tin quiz.')
+    } finally {
+      setActionLoading(null)
+    }
+  }
 
   const handleQuickCreate = async (theme: string) => {
     setQuickCreating(theme)
@@ -364,11 +403,16 @@ export default function DashboardPage() {
                             {quiz.questionCount ?? quiz.questions?.length ?? 0} Questions
                           </span>
                         </div>
-                        <div>
-                          <h3 className="text-xl font-bold text-white line-clamp-1 group-hover:text-purple-400 transition-colors">
+                        <div 
+                          onClick={() => handleOpenEditQuiz(quiz)}
+                          title="Click để sửa nhanh tên và mô tả"
+                          className="cursor-pointer group/info select-none"
+                        >
+                          <h3 className="text-xl font-bold text-white line-clamp-1 group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
                             {quiz.title}
+                            <Edit3 className="w-3.5 h-3.5 text-gray-500 opacity-0 group-hover/info:opacity-100 transition-opacity shrink-0" />
                           </h3>
-                          <p className="text-gray-400 text-sm mt-1 line-clamp-2 leading-relaxed">
+                          <p className="text-gray-400 text-sm mt-1 line-clamp-2 leading-relaxed group-hover/info:text-gray-300">
                             {quiz.description || 'No description provided.'}
                           </p>
                         </div>
@@ -504,6 +548,64 @@ export default function DashboardPage() {
           )}
         </div>
       </main>
+
+      {editQuizOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1a1d26] p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <h2 className="text-lg font-bold text-white">Chỉnh sửa thông tin Quiz</h2>
+              <button
+                onClick={() => setEditQuizOpen(false)}
+                className="text-gray-400 hover:text-white transition-colors bg-transparent border-none cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Tên Quiz</label>
+                <Input
+                  type="text"
+                  value={editQuizTitle}
+                  onChange={(e) => setEditQuizTitle(e.target.value)}
+                  placeholder="Nhập tên quiz..."
+                  className="w-full bg-[#12141a] border-white/10 text-white rounded-xl h-10"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Mô tả</label>
+                <textarea
+                  value={editQuizDescription}
+                  onChange={(e) => setEditQuizDescription(e.target.value)}
+                  placeholder="Nhập mô tả cho quiz này..."
+                  rows={4}
+                  className="w-full bg-[#12141a] border border-white/10 focus:border-purple-500 text-white placeholder:text-gray-500 rounded-xl p-3 focus:outline-none text-sm resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setEditQuizOpen(false)}
+                className="border-white/10 bg-transparent text-white hover:bg-white/5 px-4 rounded-xl"
+              >
+                Hủy
+              </Button>
+              <Button
+                onClick={handleSaveQuizInfo}
+                disabled={actionLoading === `edit-${selectedQuizId}`}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 rounded-xl border-none"
+              >
+                {actionLoading === `edit-${selectedQuizId}` ? 'Đang lưu...' : 'Lưu lại'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
       <TourButton tour={dashboardTour} label="Hướng dẫn" position="bottom-right" />
     </GameBackground>

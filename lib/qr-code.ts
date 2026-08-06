@@ -5,7 +5,6 @@ export async function generateQRCode(text: string): Promise<string> {
     const qrDataUrl = await QRCode.toDataURL(text, {
       errorCorrectionLevel: 'H',
       type: 'image/png',
-      quality: 0.95,
       margin: 1,
       width: 300,
     })
@@ -21,7 +20,6 @@ export async function generateQRCodeSVG(text: string): Promise<string> {
     const svg = await QRCode.toString(text, {
       errorCorrectionLevel: 'H',
       type: 'svg',
-      quality: 0.95,
       margin: 1,
       width: 300,
     })

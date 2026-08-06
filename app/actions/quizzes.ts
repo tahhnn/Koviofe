@@ -163,7 +163,7 @@ export async function importQuestionsFromQuiz(
     order: q.displayOrder ?? index + 1,
   }))
 
-  const startOrder = existing.reduce((m, q) => Math.max(m, q.order || 0), 0)
+  const startOrder = existing.reduce((m: number, q: any) => Math.max(m, q.order || 0), 0)
   const imported = toImport.map((q: any, i: number) => ({
     id: 0,
     content: q.questionText,
@@ -200,12 +200,13 @@ export async function importQuestionsFromQuiz(
 }
 
 export async function updateQuiz(quizId: string, title: string, description?: string) {
-  const reqQuestions = quiz.questions.map((q) => ({
+  const quiz = await getQuizById(quizId)
+  const reqQuestions = (quiz.questions || []).map((q: any) => ({
     id: Number(q.id),
     content: q.questionText,
     type: q.type || 'multiple_choice',
-    options: q.options.map((opt) => ({ id: opt.id, text: opt.optionText, isCorrect: opt.isCorrect, mediaUrl: opt.mediaUrl || '' })),
-    correct_answer: q.correct_answer || q.options.find((opt) => opt.isCorrect)?.id || 'A',
+    options: (q.options || []).map((opt: any) => ({ id: opt.id, text: opt.optionText, isCorrect: !!opt.isCorrect, mediaUrl: opt.mediaUrl || '' })),
+    correct_answer: q.correct_answer || (q.options || []).find((opt: any) => opt.isCorrect)?.id || 'A',
     duration: q.timeLimit,
     points: q.points || 1000,
     order: q.displayOrder,
@@ -228,7 +229,12 @@ export async function updateQuizThemeConfig(quizId: string, themeConfig: string)
     id: Number(q.id),
     content: q.questionText,
     type: q.type || 'multiple_choice',
-    options: (q.options || []).map((opt: any) => ({ id: opt.id, text: opt.optionText || opt.text, isCorrect: opt.isCorrect })),
+    options: (q.options || []).map((opt: any) => ({
+      id: opt.id,
+      text: opt.optionText || opt.text,
+      isCorrect: opt.isCorrect,
+      mediaUrl: opt.mediaUrl || '',
+    })),
     correct_answer: q.correct_answer || (q.options || []).find((opt: any) => opt.isCorrect)?.id || 'A',
     duration: q.timeLimit,
     points: q.points || 1000,
@@ -256,12 +262,12 @@ export async function deleteQuiz(quizId: string) {
 export async function addQuestion(quizId: string, questionText: string, timeLimit: number = 30) {
   const quiz = await getQuizById(quizId)
   
-  const reqQuestions = quiz.questions.map((q) => ({
+  const reqQuestions = (quiz.questions || []).map((q: any) => ({
     id: Number(q.id),
     content: q.questionText,
     type: q.type || 'multiple_choice',
-    options: q.options.map((opt) => ({ id: opt.id, text: opt.optionText, isCorrect: opt.isCorrect, mediaUrl: opt.mediaUrl || '' })),
-    correct_answer: q.correct_answer || q.options.find((opt) => opt.isCorrect)?.id || 'A',
+    options: (q.options || []).map((opt: any) => ({ id: opt.id, text: opt.optionText, isCorrect: !!opt.isCorrect, mediaUrl: opt.mediaUrl || '' })),
+    correct_answer: q.correct_answer || (q.options || []).find((opt: any) => opt.isCorrect)?.id || 'A',
     duration: q.timeLimit,
     points: q.points || 1000,
     order: q.displayOrder,
@@ -319,6 +325,7 @@ export async function addQuestion(quizId: string, questionText: string, timeLimi
       id: o.id,
       optionText: o.text,
       isCorrect: o.isCorrect,
+      mediaUrl: o.mediaUrl || '',
     })),
   }
 }
@@ -361,18 +368,6 @@ export async function updateQuestion(
           ]
         } else if (type === 'short_answer' || type === 'pin_answer') {
           opts = []
-        } else if (type === 'slider') {
-          opts = [
-            { id: 'min', text: '0', isCorrect: false, mediaUrl: '' },
-            { id: 'max', text: '100', isCorrect: false, mediaUrl: '' }
-          ]
-        } else if (type === 'puzzle') {
-          opts = [
-            { id: 'A', text: 'Item 1', isCorrect: true, mediaUrl: '' },
-            { id: 'B', text: 'Item 2', isCorrect: true, mediaUrl: '' },
-            { id: 'C', text: 'Item 3', isCorrect: true, mediaUrl: '' },
-            { id: 'D', text: 'Item 4', isCorrect: true, mediaUrl: '' }
-          ]
         } else if (type === 'poll' || type === 'multiple_choice') {
           opts = [
             { id: 'A', text: 'Choice 1', isCorrect: type === 'multiple_choice', mediaUrl: '' },
@@ -461,27 +456,18 @@ export async function deleteQuestion(questionId: string) {
 }
 
 // Answer Options inside GORM Question array
-export async function addAnswerOption(questionId: string, optionText: string, isCorrect: boolean) {
-  const quizzes = await apiRequest('/quizzes')
-  let quizId = ''
-  let quizDetails: any = null
-
-  for (const q of quizzes) {
-    const details = await apiRequest(`/quizzes/${q.id}`)
-    const found = (details.questions || []).some((item: any) => String(item.id) === questionId)
-    if (found) {
-      quizId = String(q.id)
-      quizDetails = details
-      break
-    }
-  }
-
-  if (!quizId) throw new Error('Question not found')
+export async function addAnswerOption(
+  quizId: string,
+  questionId: string,
+  optionText: string,
+  isCorrect: boolean
+) {
+  const quizDetails = await apiRequest(`/quizzes/${quizId}`)
 
   let newOptId = 'A'
   let newOptionObj: any = null
 
-  const reqQuestions = quizDetails.questions.map((q: any) => {
+  const reqQuestions = (quizDetails.questions || []).map((q: any) => {
     let parsedOpts = []
     try { parsedOpts = q.options ? JSON.parse(q.options) : [] } catch {}
 
@@ -489,7 +475,7 @@ export async function addAnswerOption(questionId: string, optionText: string, is
       // Find next letter A, B, C, D...
       const nextLetter = String.fromCharCode(65 + parsedOpts.length) // A=65, B=66...
       newOptId = nextLetter
-      newOptionObj = { id: nextLetter, text: optionText, isCorrect }
+      newOptionObj = { id: nextLetter, text: optionText, isCorrect, mediaUrl: '' }
       parsedOpts.push(newOptionObj)
       
       return {
@@ -531,40 +517,34 @@ export async function addAnswerOption(questionId: string, optionText: string, is
   }
 }
 
-export async function updateAnswerOption(optionId: string, optionText: string, isCorrect: boolean, mediaUrl: string = '') {
-  const quizzes = await apiRequest('/quizzes')
-  let quizId = ''
-  let quizDetails: any = null
-  let questionId = ''
+export async function updateAnswerOption(
+  quizId: string,
+  questionId: string,
+  optionId: string,
+  optionText: string,
+  isCorrect: boolean,
+  mediaUrl: string = ''
+) {
+  const quizDetails = await apiRequest(`/quizzes/${quizId}`)
 
-  for (const q of quizzes) {
-    const details = await apiRequest(`/quizzes/${q.id}`)
-    for (const question of details.questions || []) {
-      let parsedOpts = []
-      try { parsedOpts = question.options ? JSON.parse(question.options) : [] } catch {}
-      const hasOpt = parsedOpts.some((o: any) => o.id === optionId)
-      if (hasOpt) {
-        quizId = String(q.id)
-        quizDetails = details
-        questionId = String(question.id)
-        break
-      }
-    }
-    if (quizId) break
-  }
-
-  if (!quizId) throw new Error('Option not found')
-
-  const reqQuestions = quizDetails.questions.map((q: any) => {
-    let parsedOpts = []
+  const reqQuestions = (quizDetails.questions || []).map((q: any) => {
+    let parsedOpts: any[] = []
     try { parsedOpts = q.options ? JSON.parse(q.options) : [] } catch {}
 
-    if (String(q.id) === questionId) {
+    if (String(q.id) === String(questionId)) {
       let correctAns = q.correct_answer
+      let matched = false
       parsedOpts = parsedOpts.map((o: any) => {
-        if (o.id === optionId) {
-          if (isCorrect) correctAns = optionId
-          return { ...o, text: optionText, isCorrect, mediaUrl }
+        if (String(o.id) === String(optionId)) {
+          matched = true
+          if (isCorrect) correctAns = String(o.id)
+          return {
+            ...o,
+            id: String(o.id),
+            text: optionText || o.text || '',
+            isCorrect,
+            mediaUrl: mediaUrl || '',
+          }
         }
         // If this one is correct and isCorrect parameter is true, other options must be false (single-choice)
         if (isCorrect && o.isCorrect) {
@@ -572,6 +552,10 @@ export async function updateAnswerOption(optionId: string, optionText: string, i
         }
         return o
       })
+
+      if (!matched) {
+        throw new Error(`Option ${optionId} not found on question ${questionId}`)
+      }
 
       return {
         id: q.id,
@@ -607,31 +591,10 @@ export async function updateAnswerOption(optionId: string, optionText: string, i
   return { success: true }
 }
 
-export async function deleteAnswerOption(optionId: string) {
-  const quizzes = await apiRequest('/quizzes')
-  let quizId = ''
-  let quizDetails: any = null
-  let questionId = ''
+export async function deleteAnswerOption(quizId: string, questionId: string, optionId: string) {
+  const quizDetails = await apiRequest(`/quizzes/${quizId}`)
 
-  for (const q of quizzes) {
-    const details = await apiRequest(`/quizzes/${q.id}`)
-    for (const question of details.questions || []) {
-      let parsedOpts = []
-      try { parsedOpts = question.options ? JSON.parse(question.options) : [] } catch {}
-      const hasOpt = parsedOpts.some((o: any) => o.id === optionId)
-      if (hasOpt) {
-        quizId = String(q.id)
-        quizDetails = details
-        questionId = String(question.id)
-        break
-      }
-    }
-    if (quizId) break
-  }
-
-  if (!quizId) throw new Error('Option not found')
-
-  const reqQuestions = quizDetails.questions.map((q: any) => {
+  const reqQuestions = (quizDetails.questions || []).map((q: any) => {
     let parsedOpts = []
     try { parsedOpts = q.options ? JSON.parse(q.options) : [] } catch {}
 
@@ -642,6 +605,7 @@ export async function deleteAnswerOption(optionId: string) {
         id: String.fromCharCode(65 + idx),
         text: o.text,
         isCorrect: o.isCorrect,
+        mediaUrl: o.mediaUrl || '',
       }))
       
       const newCorrect = parsedOpts.find((o: any) => o.isCorrect)?.id || 'A'

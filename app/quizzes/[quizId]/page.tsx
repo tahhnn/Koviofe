@@ -23,7 +23,7 @@ import {
 } from '@/app/actions/quizzes'
 import { GameBackground } from '@/components/game-background'
 import { useToast } from '@/components/ui/toast'
-import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus, Settings } from 'lucide-react'
 import { BrandMark } from '@/components/brand-mark'
 import { TourButton } from '@/components/tour-button'
 import { quizEditorTour } from '@/lib/tours'
@@ -54,12 +54,21 @@ export default function QuizEditorPage() {
     questionId: string
     optionId?: string
   } | null>(null)
+  const giphyTargetRef = useRef(giphyTarget)
+  giphyTargetRef.current = giphyTarget
+
+  // Quiz settings states
+  const [quizSettingsOpen, setQuizSettingsOpen] = useState(false)
+  const [editTitle, setEditTitle] = useState('')
+  const [editDescription, setEditDescription] = useState('')
 
   useEffect(() => {
     const loadQuiz = async () => {
       try {
         const quizData = await getQuizById(quizId)
         setQuiz(quizData)
+        setEditTitle(quizData.title)
+        setEditDescription(quizData.description || '')
         if (quizData.questions && quizData.questions.length > 0) {
           setActiveQuestionId(quizData.questions[0].id)
         }
@@ -152,10 +161,33 @@ export default function QuizEditorPage() {
     )
   }
 
+  const handleSaveQuizSettings = async () => {
+    if (!editTitle.trim()) {
+      toast.error('Lỗi', 'Tên quiz không được để trống.')
+      return
+    }
+    setSaving(true)
+    try {
+      await updateQuiz(quizId, editTitle, editDescription)
+      setQuiz((prev: any) => ({
+        ...prev,
+        title: editTitle,
+        description: editDescription,
+      }))
+      setQuizSettingsOpen(false)
+      toast.success('Đã cập nhật thông tin quiz thành công!')
+    } catch (error) {
+      console.error('Error updating quiz settings:', error)
+      toast.error('Lỗi', 'Không thể lưu thông tin quiz.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleAddOption = async (questionId: string) => {
     setSaving(true)
     try {
-      const newOption = await addAnswerOption(questionId, 'New Answer Choice', false)
+      const newOption = await addAnswerOption(quizId, questionId, 'New Answer Choice', false)
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((q: any) =>
@@ -231,9 +263,7 @@ export default function QuizEditorPage() {
       let correctAns = ''
       if (newType === 'true_false') correctAns = 'A'
       if (newType === 'short_answer') correctAns = 'Answer Text'
-      if (newType === 'slider') correctAns = '50'
       if (newType === 'pin_answer') correctAns = '50,50'
-      if (newType === 'puzzle') correctAns = 'A,B,C,D'
       if (newType === 'poll') correctAns = 'POLL'
 
       await updateQuestion(questionId, contentStr, timeLimit, newType, correctAns)
@@ -266,7 +296,7 @@ export default function QuizEditorPage() {
       const opt = q?.options.find((o: any) => o.id === optionId)
       const mediaUrl = opt ? opt.mediaUrl : ''
 
-      await updateAnswerOption(optionId, newText, isCorrect, mediaUrl)
+      await updateAnswerOption(quizId, questionId, optionId, newText, isCorrect, mediaUrl)
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((item: any) => {
@@ -288,7 +318,7 @@ export default function QuizEditorPage() {
 
   const handleUpdateOption = async (questionId: string, optionId: string, optionText: string, isCorrect: boolean, mediaUrl: string = '') => {
     try {
-      await updateAnswerOption(optionId, optionText, isCorrect, mediaUrl)
+      await updateAnswerOption(quizId, questionId, optionId, optionText, isCorrect, mediaUrl)
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((q: any) => {
@@ -296,8 +326,8 @@ export default function QuizEditorPage() {
             return {
               ...q,
               options: q.options.map((o: any) => {
-                if (o.id === optionId) {
-                  return { ...o, isCorrect, mediaUrl }
+                if (String(o.id) === String(optionId)) {
+                  return { ...o, optionText, isCorrect, mediaUrl }
                 }
                 if (isCorrect) {
                   return { ...o, isCorrect: false }
@@ -312,12 +342,20 @@ export default function QuizEditorPage() {
       }))
     } catch (error) {
       console.error('Error updating option:', error)
+      // Reload from server so optimistic GIF preview can be reconciled
+      try {
+        const fresh = await getQuizById(quizId)
+        setQuiz(fresh)
+      } catch {
+        /* ignore */
+      }
+      throw error
     }
   }
 
   const handleDeleteOption = async (optionId: string, questionId: string) => {
     try {
-      await deleteAnswerOption(optionId)
+      await deleteAnswerOption(quizId, questionId, optionId)
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((q: any) =>
@@ -428,22 +466,43 @@ export default function QuizEditorPage() {
   }
 
   const handleGifSelect = async (url: string) => {
-    if (!giphyTarget) return
-    const { type, questionId, optionId } = giphyTarget
+    const target = giphyTargetRef.current
+    if (!target) return
+    const { type, questionId, optionId } = target
 
     if (type === 'question') {
       const q = quiz.questions.find((item: any) => item.id === questionId)
       if (q) {
         const parsed = parseQuestionContent(q.questionText)
         const newContent = JSON.stringify({ text: parsed.text, mediaUrl: url })
+        // Optimistic preview
+        setQuiz((prev: any) => ({
+          ...prev,
+          questions: prev.questions.map((item: any) =>
+            item.id === questionId ? { ...item, questionText: newContent } : item
+          ),
+        }))
         await handleQuestionTextUpdate(questionId, newContent, q.timeLimit, q.type || 'multiple_choice', q.correct_answer)
       }
     } else if (type === 'option' && optionId) {
       const q = quiz.questions.find((item: any) => item.id === questionId)
       if (q) {
-        const opt = q.options.find((o: any) => o.id === optionId)
+        const opt = q.options.find((o: any) => String(o.id) === String(optionId))
         if (opt) {
-          await handleUpdateOption(questionId, optionId, opt.optionText, opt.isCorrect, url)
+          // Optimistic preview so GIF shows even if server action is slow
+          setQuiz((prev: any) => ({
+            ...prev,
+            questions: prev.questions.map((item: any) => {
+              if (item.id !== questionId) return item
+              return {
+                ...item,
+                options: item.options.map((o: any) =>
+                  String(o.id) === String(optionId) ? { ...o, mediaUrl: url } : o
+                ),
+              }
+            }),
+          }))
+          await handleUpdateOption(questionId, optionId, opt.optionText || '', !!opt.isCorrect, url)
         }
       }
     }
@@ -455,14 +514,32 @@ export default function QuizEditorPage() {
       if (q) {
         const parsed = parseQuestionContent(q.questionText)
         const newContent = JSON.stringify({ text: parsed.text, mediaUrl: '' })
+        setQuiz((prev: any) => ({
+          ...prev,
+          questions: prev.questions.map((item: any) =>
+            item.id === questionId ? { ...item, questionText: newContent } : item
+          ),
+        }))
         await handleQuestionTextUpdate(questionId, newContent, q.timeLimit, q.type || 'multiple_choice', q.correct_answer)
       }
     } else if (type === 'option' && optionId) {
       const q = quiz.questions.find((item: any) => item.id === questionId)
       if (q) {
-        const opt = q.options.find((o: any) => o.id === optionId)
+        const opt = q.options.find((o: any) => String(o.id) === String(optionId))
         if (opt) {
-          await handleUpdateOption(questionId, optionId, opt.optionText, opt.isCorrect, '')
+          setQuiz((prev: any) => ({
+            ...prev,
+            questions: prev.questions.map((item: any) => {
+              if (item.id !== questionId) return item
+              return {
+                ...item,
+                options: item.options.map((o: any) =>
+                  String(o.id) === String(optionId) ? { ...o, mediaUrl: '' } : o
+                ),
+              }
+            }),
+          }))
+          await handleUpdateOption(questionId, optionId, opt.optionText || '', !!opt.isCorrect, '')
         }
       }
     }
@@ -526,17 +603,11 @@ export default function QuizEditorPage() {
   const activeParsedContent = activeQuestion ? parseQuestionContent(activeQuestion.questionText) : { text: '', mediaUrl: '' }
   const activeType = activeQuestion?.type || 'multiple_choice'
 
-  // Parse min/max values for slider
-  const sliderMin = activeQuestion?.options?.find((o: any) => o.id === 'min')?.optionText || '0'
-  const sliderMax = activeQuestion?.options?.find((o: any) => o.id === 'max')?.optionText || '100'
-
   const typeLabels: Record<string, string> = {
     multiple_choice: 'Quiz',
     true_false: 'T/F',
     short_answer: 'Short',
-    slider: 'Slider',
     pin_answer: 'Pin',
-    puzzle: 'Puzzle',
     poll: 'Poll',
   }
 
@@ -565,6 +636,19 @@ export default function QuizEditorPage() {
               <h1 className="text-base font-semibold text-[#f2f0eb] truncate">
                 {quiz.title}
               </h1>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditTitle(quiz.title)
+                  setEditDescription(quiz.description || '')
+                  setQuizSettingsOpen(true)
+                }}
+                title="Cấu hình Quiz"
+                className="h-8 w-8 text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-[#12141a] rounded-lg shrink-0 cursor-pointer"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
             </div>
           </div>
 
@@ -605,7 +689,7 @@ export default function QuizEditorPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden min-h-[calc(100vh-73px)] font-sans">
+      <div className="flex-1 flex overflow-hidden h-[calc(100vh-73px)] font-sans">
         <aside className="w-64 border-r border-[#2c313d] bg-[#1a1d26] flex flex-col h-[calc(100vh-73px)] select-none" data-tour="question-slides">
           <div className="p-4 border-b border-[#2c313d] flex items-center justify-between shrink-0">
             <h3 className="text-sm text-[#9a9eab] font-medium">Questions</h3>
@@ -683,7 +767,7 @@ export default function QuizEditorPage() {
           </div>
         </aside>
 
-        <section className="flex-1 bg-[#12141a] p-8 overflow-y-auto flex flex-col space-y-6" data-tour="question-editor">
+        <section className="flex-1 bg-[#12141a] p-8 overflow-y-auto flex flex-col space-y-6 h-[calc(100vh-73px)]" data-tour="question-editor">
           {!activeQuestion ? (
             <div className="h-full flex flex-col items-center justify-center space-y-5 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-[#2c313d] bg-[#1a1d26]">
@@ -835,75 +919,7 @@ export default function QuizEditorPage() {
                       }
                     />
                     <p className="text-xs text-[#9a9eab] leading-normal">
-                      Players must type this text. White space differences are handled automatically.
-                    </p>
-                  </div>
-                )}
-
-                {activeType === 'slider' && (
-                  <div className="bg-[#1a1d26] border border-[#2c313d] rounded-2xl p-6 space-y-6">
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-sm text-[#9a9eab]">Min value</label>
-                        <Input
-                          type="number"
-                          placeholder="0"
-                          defaultValue={sliderMin}
-                          className={inputClass}
-                          onBlur={async (e) => {
-                            let opt = activeQuestion.options.find((o: any) => o.id === 'min')
-                            if (opt) {
-                              await handleUpdateOption(activeQuestion.id, 'min', e.target.value, false)
-                            } else {
-                              const newOpt = await addAnswerOption(activeQuestion.id, e.target.value, false)
-                              const updatedQuiz = await getQuizById(quizId)
-                              setQuiz(updatedQuiz)
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm text-[#9a9eab]">Max value</label>
-                        <Input
-                          type="number"
-                          placeholder="100"
-                          defaultValue={sliderMax}
-                          className={inputClass}
-                          onBlur={async (e) => {
-                            let opt = activeQuestion.options.find((o: any) => o.id === 'max')
-                            if (opt) {
-                              await handleUpdateOption(activeQuestion.id, 'max', e.target.value, false)
-                            } else {
-                              const newOpt = await addAnswerOption(activeQuestion.id, e.target.value, false)
-                              const updatedQuiz = await getQuizById(quizId)
-                              setQuiz(updatedQuiz)
-                            }
-                          }}
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm text-[#9a9eab]">Correct number</label>
-                        <Input
-                          type="number"
-                          placeholder="50"
-                          defaultValue={activeQuestion.correct_answer || '50'}
-                          className={inputClass}
-                          onBlur={(e) =>
-                            handleQuestionCorrectAnswerBlur(
-                              activeQuestion.id,
-                              activeQuestion.questionText,
-                              activeQuestion.timeLimit,
-                              activeType,
-                              e.target.value
-                            )
-                          }
-                        />
-                      </div>
-                    </div>
-                    <p className="text-xs text-[#9a9eab]">
-                      Players will slide a bar between min and max. Points are awarded based on proximity to the correct number.
+                      Players must type this text. Leading/trailing whitespace is trimmed; match is case-insensitive.
                     </p>
                   </div>
                 )}
@@ -920,48 +936,7 @@ export default function QuizEditorPage() {
                   </div>
                 )}
 
-                {activeType === 'puzzle' && (
-                  <div className="space-y-4">
-                    <div className="bg-[#1a1d26] border border-[#2c313d] rounded-2xl p-4 text-xs text-[#9a9eab]">
-                      Add 4 options below in the correct sort order (1 to 4). Players drag and drop to match this sequence.
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {['A', 'B', 'C', 'D'].map((letter, oIndex) => {
-                        const option = activeQuestion.options?.find((o: any) => o.id === letter) || { optionText: `Item ${oIndex + 1}`, id: letter }
-                        const puzzleColors = [
-                          'bg-[#e85d4c]/10 border-[#e85d4c]/30',
-                          'bg-blue-500/10 border-blue-500/30',
-                          'bg-[#2dd4bf]/10 border-[#2dd4bf]/30',
-                          'bg-amber-400/10 border-amber-400/30',
-                        ]
-
-                        return (
-                          <div key={`puz-${letter}`} className={`p-5 rounded-xl border flex items-center gap-3 bg-[#1a1d26] ${puzzleColors[oIndex]}`}>
-                            <span className="font-semibold text-sm text-[#c5c2ba] bg-[#12141a] w-7 h-7 rounded-lg flex items-center justify-center border border-[#2c313d]">
-                              {oIndex + 1}
-                            </span>
-                            <input
-                              type="text"
-                              defaultValue={option.optionText}
-                              placeholder={`Sequence item ${oIndex + 1}...`}
-                              className="flex-1 bg-transparent border-none text-[#f2f0eb] text-base font-medium focus:outline-none placeholder:text-[#5c6170]"
-                              onBlur={(e) =>
-                                handleOptionTextBlur(
-                                  activeQuestion.id,
-                                  option.id,
-                                  e.target.value,
-                                  true
-                                )
-                              }
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {(activeType === 'multiple_choice' || activeType === 'poll') && (
+                {(activeType === 'multiple_choice' || activeType === 'poll' || activeType === 'true_false') && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {(activeQuestion.options || []).map((option: any, oIndex: number) => {
                       const badgeColors = [
@@ -975,9 +950,9 @@ export default function QuizEditorPage() {
 
                       return (
                         <div
-                          key={`opt-${option.id}`}
+                          key={`opt-${activeQuestion.id}-${option.id}`}
                           className={`relative p-5 rounded-xl border transition-all duration-200 flex flex-col gap-4 bg-[#1a1d26] ${
-                            isCorrect && activeType === 'multiple_choice'
+                            isCorrect && (activeType === 'multiple_choice' || activeType === 'true_false')
                               ? 'border-[#2dd4bf]/50 ring-1 ring-[#2dd4bf]/20 bg-[#2dd4bf]/5'
                               : 'border-[#2c313d]'
                           }`}
@@ -987,6 +962,7 @@ export default function QuizEditorPage() {
                               {String.fromCharCode(65 + oIndex)}
                             </div>
                             <input
+                              key={`opt-input-${activeQuestion.id}-${option.id}`}
                               type="text"
                               defaultValue={option.optionText}
                               placeholder={`Answer choice ${oIndex + 1}...`}
@@ -1036,7 +1012,7 @@ export default function QuizEditorPage() {
                               )}
                             </div>
 
-                            {activeType === 'multiple_choice' && (
+                            {(activeType === 'multiple_choice' || activeType === 'true_false') && (
                               <button
                                 onClick={() =>
                                   handleUpdateOption(
@@ -1068,7 +1044,7 @@ export default function QuizEditorPage() {
           )}
         </section>
 
-        <aside className="w-72 border-l border-[#2c313d] bg-[#1a1d26] p-6 space-y-6 overflow-y-auto select-none">
+        <aside className="w-72 border-l border-[#2c313d] bg-[#1a1d26] p-6 space-y-6 overflow-y-auto select-none h-[calc(100vh-73px)]">
           <h3 className="text-sm text-[#9a9eab] font-medium">Slide settings</h3>
 
           {activeQuestion ? (
@@ -1081,9 +1057,7 @@ export default function QuizEditorPage() {
                       { id: 'multiple_choice', name: 'Quiz' },
                       { id: 'true_false', name: 'True/False' },
                       { id: 'short_answer', name: 'Type answer' },
-                      { id: 'slider', name: 'Slider' },
                       { id: 'pin_answer', name: 'Pin answer' },
-                      { id: 'puzzle', name: 'Puzzle' },
                     ].map(typeItem => (
                       <button
                         key={typeItem.id}
@@ -1251,6 +1225,63 @@ export default function QuizEditorPage() {
                 className="flex-1 h-10 rounded-xl bg-[#e85d4c] hover:bg-[#d44e3e] text-white border-none font-semibold"
               >
                 {importLoading ? 'Đang thêm…' : `Thêm ${importSelected.size} câu`}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {quizSettingsOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-[#2c313d] bg-[#1a1d26] p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#2c313d] pb-3">
+              <h2 className="text-lg font-bold text-[#f2f0eb]">Cấu hình Quiz</h2>
+              <button
+                onClick={() => setQuizSettingsOpen(false)}
+                className="text-[#9a9eab] hover:text-[#f2f0eb] transition-colors bg-transparent border-none cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-[#c5c2ba]">Tên Quiz</label>
+                <Input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Nhập tên quiz..."
+                  className={`w-full ${inputClass} h-10`}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-[#c5c2ba]">Mô tả</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Nhập mô tả cho quiz này..."
+                  rows={4}
+                  className={`w-full bg-[#12141a] border border-[#2c313d] focus:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] rounded-xl p-3 focus:outline-none text-sm resize-none`}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setQuizSettingsOpen(false)}
+                className="border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-[#12141a] px-4 rounded-xl"
+              >
+                Hủy
+              </Button>
+              <Button
+                onClick={handleSaveQuizSettings}
+                disabled={saving}
+                className="bg-[#e85d4c] hover:bg-[#d44e3e] text-white px-5 rounded-xl border-none"
+              >
+                {saving ? 'Đang lưu...' : 'Lưu cài đặt'}
               </Button>
             </div>
           </div>

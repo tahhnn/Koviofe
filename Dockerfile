@@ -20,8 +20,8 @@ COPY . .
 
 # Set environment variables for Next.js build
 # These need to be present at build time for client-side injection
-ENV NEXT_PUBLIC_API_URL=http://localhost:8082/api
-ENV NEXT_PUBLIC_CENTRIFUGO_URL=ws://localhost:8000/connection/websocket
+ENV NEXT_PUBLIC_API_URL=/api
+ENV NEXT_PUBLIC_CENTRIFUGO_URL=/centrifugo
 
 RUN pnpm run build
 
@@ -32,12 +32,16 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV UPLOAD_DIR=/app/uploads
 
 # Copy output files
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
+
+# Runtime uploads (persisted via docker volume)
+RUN mkdir -p /app/uploads
 
 EXPOSE 3000
 

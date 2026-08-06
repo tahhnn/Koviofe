@@ -447,5 +447,5 @@ if (typeof module !== 'undefined' && module.exports) {
 
 if (typeof window !== 'undefined') {
   window.StepTour = StepTour;
-  StepTour.__kovioV2 = true;
+  StepTour.__quizzzoneV2 = true;
 }

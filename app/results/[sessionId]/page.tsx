@@ -16,11 +16,13 @@ export default function ResultsPage() {
   const [leaderboard, setLeaderboard] = useState<any[]>([])
   const [userRank, setUserRank] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [isPlayer, setIsPlayer] = useState(false)
 
   useEffect(() => {
     const loadResults = async () => {
       try {
         const playerToken = sessionStorage.getItem(`player_token_${sessionId}`)
+        setIsPlayer(!!playerToken)
         await getGameSession(sessionId, playerToken || undefined)
         const lb = await getLeaderboard(sessionId, playerToken || undefined)
         setLeaderboard(lb)
@@ -128,27 +130,39 @@ export default function ResultsPage() {
           </div>
 
           <div className="flex flex-wrap gap-3 justify-center">
-            <Link href="/join">
-              <Button className="h-11 px-5 bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] font-semibold rounded-xl">
-                Join another
-              </Button>
-            </Link>
-            <Link href="/dashboard">
-              <Button
-                variant="outline"
-                className="h-11 px-5 border-[#2c313d] text-[#f2f0eb] hover:bg-white/5 rounded-xl"
-              >
-                Dashboard
-              </Button>
-            </Link>
-            <Link href="/">
-              <Button
-                variant="outline"
-                className="h-11 px-5 border-[#2c313d] text-[#f2f0eb] hover:bg-white/5 rounded-xl"
-              >
-                Home
-              </Button>
-            </Link>
+            {isPlayer ? (
+              <>
+                <Link href="/join">
+                  <Button className="h-11 px-5 bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] font-semibold rounded-xl">
+                    Join another
+                  </Button>
+                </Link>
+                <Link href="/">
+                  <Button
+                    variant="outline"
+                    className="h-11 px-5 border-[#2c313d] text-[#f2f0eb] hover:bg-white/5 rounded-xl"
+                  >
+                    Home
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/dashboard">
+                  <Button className="h-11 px-5 bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] font-semibold rounded-xl">
+                    Host another
+                  </Button>
+                </Link>
+                <Link href="/">
+                  <Button
+                    variant="outline"
+                    className="h-11 px-5 border-[#2c313d] text-[#f2f0eb] hover:bg-white/5 rounded-xl"
+                  >
+                    Home
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>

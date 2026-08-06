@@ -17,15 +17,13 @@ export function BrandMark({
     <Link
       href={href}
       className={cn(
-        'inline-flex items-baseline gap-0.5 font-semibold tracking-tight text-[#f2f0eb] hover:opacity-90 transition-opacity',
+        'inline-flex items-baseline font-semibold tracking-tight text-[#f2f0eb] hover:opacity-90 transition-opacity',
         text,
         className
       )}
     >
-      <span>Kovio</span>
-      <span className="text-[#e85d4c]" aria-hidden>
-        .
-      </span>
+      <span>quizz</span>
+      <span className="text-[#e85d4c] font-bold">Zone</span>
     </Link>
   )
 }

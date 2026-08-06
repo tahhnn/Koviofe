@@ -96,7 +96,7 @@ export default async function HomePage() {
 
         <footer className="mt-24 pt-8 border-t border-[#2c313d] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-[#6b7080]">
           <BrandMark size="sm" className="opacity-80" />
-          <p>Kovio {new Date().getFullYear()}</p>
+          <p>quizzZone {new Date().getFullYear()}</p>
         </footer>
       </div>
     </GameBackground>

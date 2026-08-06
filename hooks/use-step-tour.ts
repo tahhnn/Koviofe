@@ -53,7 +53,7 @@ function loadStepTourScript(): Promise<void> {
     }
 
     // Drop stale StepTour builds that lack Finish / skip-missing fixes
-    if (window.StepTour && !(window.StepTour as any).__kovioV2) {
+    if (window.StepTour && !(window.StepTour as any).__quizzzoneV2) {
       const stale = document.querySelector('script[data-step-tour]')
       if (stale) stale.remove()
       delete (window as any).StepTour
