@@ -44,8 +44,8 @@ export function TourButton({ tour, label, position = 'bottom-right' }: TourButto
   }, [running, startTour, tour])
 
   const positionClasses = {
-    'bottom-right': 'bottom-4 right-4',
-    'bottom-left': 'bottom-4 left-4',
+    'bottom-right': 'bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4',
+    'bottom-left': 'bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4',
     'top-right': 'top-4 right-4',
     'top-left': 'top-4 left-4',
   }
@@ -56,6 +56,7 @@ export function TourButton({ tour, label, position = 'bottom-right' }: TourButto
       onClick={handleStart}
       disabled={running}
       title={label || 'Start guided tour'}
+      aria-label={label || 'Start guided tour'}
       className={`
         fixed z-50 flex items-center gap-2 rounded-full
         bg-[#e85d4c] hover:bg-[#d44e3e] text-white

@@ -134,7 +134,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast, dismiss, success, error, info, confirm, apiError }}>
       {children}
-      <div className="fixed bottom-5 right-5 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+      <div className="fixed bottom-5 inset-x-4 sm:inset-x-auto sm:right-5 z-[9999] flex flex-col gap-3 w-auto sm:w-full sm:max-w-sm pointer-events-none">
         {toasts.map((t) => (
           <ToastCard key={t.id} toast={t} onClose={() => dismiss(t.id)} />
         ))}
@@ -203,13 +203,13 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
                   if (toast.onConfirm) toast.onConfirm()
                   onClose()
                 }}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer shadow-md"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-[11px] font-black px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer shadow-md"
               >
                 Xác nhận
               </button>
               <button
                 onClick={onClose}
-                className="bg-white/10 hover:bg-white/15 text-gray-300 text-[11px] font-black px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                className="bg-white/10 hover:bg-white/15 text-gray-300 text-xs sm:text-[11px] font-black px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer"
               >
                 Hủy
               </button>
@@ -224,7 +224,7 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
                     toast.action?.onClick()
                     onClose()
                   }}
-                  className="bg-[#e85d4c] hover:bg-[#d44e3e] text-white text-[11px] font-black px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer shadow-md"
+                  className="bg-[#e85d4c] hover:bg-[#d44e3e] text-white text-xs sm:text-[11px] font-black px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer shadow-md"
                 >
                   {toast.action.label}
                 </button>
@@ -235,7 +235,7 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
                     toast.secondaryAction?.onClick()
                     onClose()
                   }}
-                  className="bg-white/10 hover:bg-white/15 text-gray-200 text-[11px] font-black px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                  className="bg-white/10 hover:bg-white/15 text-gray-200 text-xs sm:text-[11px] font-black px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer"
                 >
                   {toast.secondaryAction.label}
                 </button>
@@ -245,7 +245,7 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
         </div>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-white transition-colors text-xs self-start cursor-pointer px-1"
+          className="text-gray-400 hover:text-white transition-colors text-sm self-start cursor-pointer flex items-center justify-center min-h-9 min-w-9 -mr-2 -mt-2"
         >
           ✕
         </button>

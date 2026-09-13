@@ -264,7 +264,12 @@ export function useWebSocket(roomId: string, pinCode?: string) {
 
               if (centrifugoEvent === 'question:active') {
                 legacyType = 'next_question'
-                translatedData = { questionIndex: eventData.index }
+                translatedData = {
+                  questionIndex: eventData.index,
+                  activeUntil: eventData.active_until,
+                  activeAt: eventData.active_at,
+                  sequence: eventData.sequence,
+                }
               } else if (centrifugoEvent === 'question:ended') {
                 legacyType = 'reveal_answer'
               } else if (centrifugoEvent === 'game:ended') {

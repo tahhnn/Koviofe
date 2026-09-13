@@ -691,6 +691,7 @@ export async function getGameSession(sessionId: string, playerToken?: string) {
     status: room.status === 'active' ? 'playing' : room.status,
     isPrivate: room.is_private !== false,
     currentQuestionIndex: room.current_question_index ?? data.current_question_index ?? -1,
+    questionActiveUntil: room.question_active_until ?? data.question_active_until ?? null,
     themeConfig: room.theme_config ?? data.theme_config,
     currentQuestion: data.current_question || room.current_question || null,
     questionCount: Number(data.question_count || 0),
@@ -953,4 +954,3 @@ export async function createQuizFromMockTemplate(theme: string) {
     description: created.description,
   }
 }
-

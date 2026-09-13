@@ -15,6 +15,8 @@ import {
   type LicenseSnapshot,
   type PricingPlan,
 } from '@/app/actions/license'
+import { LicenseRedeem } from '@/components/license-redeem'
+import { isLicenseLocked } from '@/lib/license'
 
 function formatLimit(n: number) {
   return n < 0 ? 'Unlimited' : String(n)
@@ -97,15 +99,15 @@ export default function ProfileSettingsPage() {
 
   return (
     <GameBackground variant="auth">
-      <div className="flex-1 flex items-center justify-center px-4 py-8">
+      <div className="flex-1 flex items-start justify-center px-4 py-6 sm:py-8">
         <div className="w-full max-w-3xl space-y-6">
-          <Card className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+          <Card className="bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-[#e85d4c]/50" />
             <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
               <div>
                 <h1 className="text-2xl font-black text-[#f2f0eb]">Gói đăng ký</h1>
                 <p className="text-sm text-[#9a9eab] mt-1">
-                  Xem giới hạn và quyền lợi hiện tại. Nâng cấp do admin cấp phép.
+                  Xem giới hạn và quyền lợi hiện tại. Nhập mã kích hoạt để nâng cấp.
                 </p>
               </div>
               {ents && (
@@ -120,6 +122,30 @@ export default function ProfileSettingsPage() {
             </div>
 
             {planLoading && <p className="text-sm text-[#9a9eab]">Đang tải gói…</p>}
+
+            {!planLoading && (
+              <div
+                className={`rounded-2xl border p-4 mb-6 space-y-3 ${
+                  isLicenseLocked(license)
+                    ? 'border-[#e85d4c]/40 bg-[#e85d4c]/10'
+                    : 'border-white/10 bg-black/30'
+                }`}
+              >
+                <div>
+                  <h2 className="text-sm font-semibold text-[#f2f0eb]">Mã kích hoạt</h2>
+                  <p className="text-xs text-[#9a9eab] mt-0.5">
+                    {isLicenseLocked(license)
+                      ? 'Tài khoản chưa kích hoạt — nhập mã đã mua để mở khoá tạo quiz và phòng chơi.'
+                      : 'Nhập mã mới để gia hạn hoặc đổi gói. Mã mới thay thế gói hiện tại.'}
+                  </p>
+                </div>
+                <LicenseRedeem
+                  onRedeemed={async () => {
+                    setLicense(await getMyLicense())
+                  }}
+                />
+              </div>
+            )}
 
             {!planLoading && ents && usage && (
               <div className="space-y-4 mb-8">
@@ -168,9 +194,9 @@ export default function ProfileSettingsPage() {
                         : 'border-white/10 bg-black/30'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                       <h3 className="text-lg font-black text-[#f2f0eb]">{p.name}</h3>
-                      <span className="text-sm font-bold text-[#c5c2ba]">
+                      <span className="text-sm font-bold text-[#c5c2ba] whitespace-nowrap">
                         {p.price_monthly_vnd === 0
                           ? 'Miễn phí'
                           : `${p.price_monthly_vnd.toLocaleString('vi-VN')}₫/tháng`}
@@ -184,7 +210,7 @@ export default function ProfileSettingsPage() {
                       {isPro && <li className="text-[#e85d4c]">• Solo / player-paced + export logs</li>}
                     </ul>
                     <div
-                      className={`w-full h-11 rounded-xl flex items-center justify-center text-sm font-bold ${
+                      className={`w-full min-h-11 h-auto py-2.5 leading-snug text-center rounded-xl flex items-center justify-center text-sm font-bold ${
                         isCurrent
                           ? 'bg-[#e85d4c]/20 text-[#e85d4c]'
                           : 'bg-white/5 text-[#9a9eab]'
@@ -210,7 +236,7 @@ export default function ProfileSettingsPage() {
             </p>
           </Card>
 
-          <Card className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+          <Card className="bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-[#e85d4c]/40" />
             <div className="mb-8 text-center">
               <h2 className="text-2xl font-black text-[#f2f0eb]">Security Settings</h2>
@@ -261,12 +287,12 @@ export default function ProfileSettingsPage() {
               </div>
 
               {error && (
-                <div className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-300 text-xs font-semibold">
+                <div className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-300 text-xs font-semibold break-words">
                   {error}
                 </div>
               )}
               {success && (
-                <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-emerald-300 text-xs font-semibold">
+                <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-emerald-300 text-xs font-semibold break-words">
                   {success}
                 </div>
               )}

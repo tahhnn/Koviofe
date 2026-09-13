@@ -10,7 +10,7 @@ export default function TemplatesRedirectPage() {
     router.replace('/dashboard')
   }, [router])
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#0c0e14]">
+    <main className="min-h-[100dvh] flex items-center justify-center bg-[#0c0e14]">
       <p className="text-sm text-[#9a9eab]">Đang chuyển về Dashboard…</p>
     </main>
   )

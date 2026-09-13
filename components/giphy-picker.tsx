@@ -26,8 +26,23 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
   const [dragOver, setDragOver] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
+  const fetchTrendingGifs = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${GIPHY_PROXY}?mode=trending&limit=24`)
+      const data = await res.json()
+      setGifs(data.data || [])
+    } catch (error) {
+      console.error('Error fetching trending GIFs:', error)
+      setGifs([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!isOpen) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset picker state on open, intentional
     setMediaTab('giphy')
     setSearchQuery('')
     setImageUrlInput('')
@@ -44,20 +59,6 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [isOpen, onClose])
-
-  const fetchTrendingGifs = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch(`${GIPHY_PROXY}?mode=trending&limit=24`)
-      const data = await res.json()
-      setGifs(data.data || [])
-    } catch (error) {
-      console.error('Error fetching trending GIFs:', error)
-      setGifs([])
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleSearch = async (queryStr: string = searchQuery) => {
     if (!queryStr.trim()) {
@@ -125,7 +126,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-[#1a1d26] border border-[#2c313d] sm:rounded-2xl rounded-t-2xl w-full max-w-3xl h-[92vh] sm:h-[min(80vh,720px)] flex flex-col overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.45)] animate-in fade-in zoom-in-95 duration-200"
+        className="bg-[#1a1d26] border border-[#2c313d] sm:rounded-2xl rounded-t-2xl w-full max-w-3xl h-[92dvh] sm:h-[min(80dvh,720px)] flex flex-col overflow-hidden shadow-[0_24px_80px_rgba(0,0,0,0.45)] animate-in fade-in zoom-in-95 duration-200"
       >
         <header className="px-5 sm:px-6 py-4 border-b border-[#2c313d] flex items-start justify-between gap-4 shrink-0">
           <div className="min-w-0">
@@ -156,7 +157,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                   key={tab.id}
                   type="button"
                   onClick={() => setMediaTab(tab.id)}
-                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-colors cursor-pointer border-none ${
+                  className={`flex-1 flex items-center justify-center gap-2 min-h-10 py-2 px-3 rounded-lg text-sm font-medium transition-colors cursor-pointer border-none ${
                     active
                       ? 'bg-[#1a1d26] text-[#f2f0eb] shadow-sm'
                       : 'bg-transparent text-[#9a9eab] hover:text-[#c5c2ba]'
@@ -263,7 +264,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                           loading="lazy"
                         />
-                        <span className="absolute inset-x-0 bottom-0 py-2 text-center text-[11px] font-medium text-[#fff8f5] bg-gradient-to-t from-[#0a0b0f]/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="absolute inset-x-0 bottom-0 py-2 text-center text-[11px] font-medium text-[#fff8f5] bg-gradient-to-t from-[#0a0b0f]/90 to-transparent opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           Use this
                         </span>
                       </button>

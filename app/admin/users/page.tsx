@@ -46,7 +46,8 @@ export default function AdminUsersPage() {
   }, [search, router])
 
   useEffect(() => {
-    load()
+    const t = setTimeout(load, 0)
+    return () => clearTimeout(t)
   }, [load])
 
   const grantPro = async (user: AdminUserRow) => {
@@ -138,9 +139,9 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <main className="container mx-auto px-6 py-10 max-w-6xl space-y-8">
+    <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-10 max-w-6xl space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-3xl font-black text-[#f2f0eb] tracking-tight">Quản lý Users</h1>
+        <h1 className="text-2xl sm:text-3xl font-black text-[#f2f0eb] tracking-tight">Quản lý Users</h1>
         <p className="text-sm text-[#9a9eab] mt-2 max-w-2xl leading-relaxed">
           Ai đăng ký đều là <strong className="text-[#c5c2ba] font-semibold">User</strong> (có thể tạo quiz /
           mở phòng / chơi). Player vào bằng PIN không cần tài khoản. Việc admin quản lý là{' '}
@@ -178,7 +179,7 @@ export default function AdminUsersPage() {
 
       <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/80 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[880px] text-sm">
             <thead>
               <tr className="border-b border-[#2c313d] text-left text-[11px] uppercase tracking-wider text-[#9a9eab]">
                 <th className="px-4 py-3 font-semibold">ID</th>
@@ -264,7 +265,7 @@ export default function AdminUsersPage() {
                                   [u.id]: e.target.value as DurationKey,
                                 }))
                               }
-                              className="h-8 text-[11px] rounded-lg bg-[#12141a] border border-[#2c313d] text-[#c5c2ba] px-2"
+                              className="h-10 sm:h-8 text-xs sm:text-[11px] rounded-lg bg-[#12141a] border border-[#2c313d] text-[#c5c2ba] px-2"
                             >
                               <option value="30">Pro 30d</option>
                               <option value="90">Pro 90d</option>
@@ -275,7 +276,7 @@ export default function AdminUsersPage() {
                               size="sm"
                               disabled={busyId === u.id}
                               onClick={() => grantPro(u)}
-                              className="h-8 text-xs rounded-lg bg-[#2dd4bf]/90 hover:bg-[#2dd4bf] text-[#0c1412] border-none font-bold"
+                              className="h-10 sm:h-8 text-xs rounded-lg bg-[#2dd4bf]/90 hover:bg-[#2dd4bf] text-[#0c1412] border-none font-bold"
                             >
                               Cấp Pro
                             </Button>
@@ -285,7 +286,7 @@ export default function AdminUsersPage() {
                               onClick={() => revokeToFree(u)}
                               variant="outline"
                               title={isPro ? 'Ngắt Pro, về Free ngay' : 'User đang Free'}
-                              className="h-8 text-xs rounded-lg border-rose-500/40 text-rose-300 hover:bg-rose-500/10 disabled:opacity-40"
+                              className="h-10 sm:h-8 text-xs rounded-lg border-rose-500/40 text-rose-300 hover:bg-rose-500/10 disabled:opacity-40"
                             >
                               Ngắt Pro
                             </Button>
@@ -297,7 +298,7 @@ export default function AdminUsersPage() {
                                 disabled={busyId === u.id}
                                 onClick={() => makeAdmin(u)}
                                 variant="outline"
-                                className="h-8 text-xs rounded-lg border-[#e85d4c]/40 text-[#e85d4c] hover:bg-[#e85d4c]/10"
+                                className="h-10 sm:h-8 text-xs rounded-lg border-[#e85d4c]/40 text-[#e85d4c] hover:bg-[#e85d4c]/10"
                               >
                                 Cấp Admin hệ thống
                               </Button>
@@ -307,7 +308,7 @@ export default function AdminUsersPage() {
                                 disabled={busyId === u.id || u.is_seed_admin}
                                 onClick={() => revokeAdmin(u)}
                                 variant="outline"
-                                className="h-8 text-xs rounded-lg border-[#2c313d] text-[#9a9eab] disabled:opacity-40"
+                                className="h-10 sm:h-8 text-xs rounded-lg border-[#2c313d] text-[#9a9eab] disabled:opacity-40"
                                 title={
                                   u.is_seed_admin
                                     ? 'Không thể gỡ admin seed'

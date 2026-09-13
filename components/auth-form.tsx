@@ -50,8 +50,8 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
 
   return (
     <GameBackground variant="auth">
-      <div className="flex-1 flex items-center justify-center px-4 py-10">
-        <div className="w-full max-w-md rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-8">
+      <div className="flex-1 flex items-start sm:items-center justify-center px-4 py-8 sm:py-10">
+        <div className="w-full max-w-md rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8">
           <div className="mb-8 text-center space-y-2">
             <BrandMark />
             <h1 className="text-2xl font-semibold text-[#f2f0eb] pt-2">
@@ -139,7 +139,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
             {isSignUp ? 'Already have an account? ' : 'Need an account? '}
             <Link
               href={isSignUp ? '/sign-in' : '/sign-up'}
-              className="text-[#e85d4c] font-medium hover:underline"
+              className="text-[#e85d4c] font-medium hover:underline inline-block py-2 px-1"
             >
               {isSignUp ? 'Sign in' : 'Sign up'}
             </Link>

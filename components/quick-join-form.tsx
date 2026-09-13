@@ -20,7 +20,7 @@ export function QuickJoinForm() {
   return (
     <form
       onSubmit={handleJoin}
-      className="w-full max-w-md rounded-2xl border border-[#2c313d] bg-[#1a1d26]/90 p-7 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.65)]"
+      className="w-full max-w-md rounded-2xl border border-[#2c313d] bg-[#1a1d26]/90 p-5 sm:p-7 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.65)]"
     >
       <div className="mb-6">
         <h3 className="text-xl font-semibold text-[#f2f0eb]">Enter a game PIN</h3>
@@ -34,7 +34,7 @@ export function QuickJoinForm() {
           placeholder="123456"
           value={pin}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-          className="h-14 bg-[#12141a] border-[#2c313d] focus-visible:border-[#e85d4c] focus-visible:ring-[#e85d4c]/30 text-[#f2f0eb] placeholder:text-[#5c6170] text-center text-2xl font-semibold tracking-[0.35em] rounded-xl"
+          className="h-14 bg-[#12141a] border-[#2c313d] focus-visible:border-[#e85d4c] focus-visible:ring-[#e85d4c]/30 text-[#f2f0eb] placeholder:text-[#5c6170] text-center text-xl sm:text-2xl font-semibold tracking-[0.25em] sm:tracking-[0.35em] rounded-xl"
           maxLength={6}
           required
           aria-label="Game PIN"

@@ -37,6 +37,7 @@ function JoinForm() {
   >([])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- seed PIN from URL param before paint, intentional
     if (pin) setSessionCode(pin.replace(/\D/g, '').slice(0, 6))
   }, [pin])
 
@@ -77,6 +78,7 @@ function JoinForm() {
       }
       verifyRoom()
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear room info before paint when PIN is incomplete, intentional
       setRoomStatus(null)
       setMaxPlayers(null)
       setPlayerCount(null)
@@ -123,29 +125,31 @@ function JoinForm() {
   const isJoinDisabled = loading || (roomStatus !== null && roomStatus !== 'waiting')
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-24 sm:pb-8">
       <form
         onSubmit={handleJoin}
-        className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-7 space-y-5"
+        className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-5 sm:p-7 space-y-5"
         data-tour="join-form"
       >
         <div className="space-y-2">
-          <label className="text-sm font-medium text-[#c5c2ba]">Game PIN</label>
+          <label htmlFor="pin" className="text-sm font-medium text-[#c5c2ba]">Game PIN</label>
           <Input
+            id="pin"
             type="text"
             inputMode="numeric"
             value={sessionCode}
             onChange={(e) => setSessionCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
             placeholder="123456"
             maxLength={6}
-            className="h-14 bg-[#12141a] border-[#2c313d] focus-visible:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] text-center text-2xl font-semibold tracking-[0.35em] rounded-xl"
+            className="h-14 bg-[#12141a] border-[#2c313d] focus-visible:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] text-center text-xl sm:text-2xl font-semibold tracking-[0.25em] sm:tracking-[0.35em] rounded-xl"
             required
           />
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium text-[#c5c2ba]">Nickname</label>
+          <label htmlFor="nickname" className="text-sm font-medium text-[#c5c2ba]">Nickname</label>
           <Input
+            id="nickname"
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -189,7 +193,7 @@ function JoinForm() {
 
         <p className="text-center text-sm text-[#9a9eab] pt-1">
           Hosting instead?{' '}
-          <Link href="/sign-in" className="text-[#e85d4c] font-medium hover:underline">
+          <Link href="/sign-in" className="text-[#e85d4c] font-medium hover:underline inline-flex min-h-11 items-center px-3">
             Sign in
           </Link>
         </p>
@@ -198,7 +202,7 @@ function JoinForm() {
       {openRooms.length > 0 && (
         <div className="space-y-3" data-tour="open-rooms">
           <h2 className="text-sm font-medium text-[#9a9eab]">Open rooms</h2>
-          <ul className="space-y-2">
+          <ul className="space-y-2 max-h-[50vh] overflow-y-auto overscroll-contain">
             {openRooms.map((room) => (
               <li key={room.id}>
                 <button
@@ -209,7 +213,7 @@ function JoinForm() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-medium text-[#f2f0eb] truncate">{room.quiz_title}</p>
-                      <p className="text-xs text-[#9a9eab] mt-0.5 font-mono tracking-wider">
+                      <p className="text-xs text-[#9a9eab] mt-0.5 font-mono tracking-wider truncate">
                         PIN {room.pin_code}
                       </p>
                     </div>
@@ -233,7 +237,7 @@ function JoinForm() {
 export default function JoinPage() {
   return (
     <GameBackground variant="arena">
-      <div className="flex-1 flex items-center justify-center p-5">
+      <div className="flex-1 flex items-start sm:items-center justify-center p-5 py-8">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center space-y-2">
             <BrandMark size="lg" />

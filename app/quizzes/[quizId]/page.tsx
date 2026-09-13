@@ -23,7 +23,7 @@ import {
 } from '@/app/actions/quizzes'
 import { GameBackground } from '@/components/game-background'
 import { useToast } from '@/components/ui/toast'
-import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus, Settings } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus, Settings, SlidersHorizontal } from 'lucide-react'
 import { BrandMark } from '@/components/brand-mark'
 import { TourButton } from '@/components/tour-button'
 import { quizEditorTour } from '@/lib/tours'
@@ -55,12 +55,17 @@ export default function QuizEditorPage() {
     optionId?: string
   } | null>(null)
   const giphyTargetRef = useRef(giphyTarget)
-  giphyTargetRef.current = giphyTarget
+  useEffect(() => {
+    giphyTargetRef.current = giphyTarget
+  }, [giphyTarget])
 
   // Quiz settings states
   const [quizSettingsOpen, setQuizSettingsOpen] = useState(false)
+  // Mobile slide-settings bottom sheet
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [pinAspect, setPinAspect] = useState<number | null>(null)
 
   useEffect(() => {
     const loadQuiz = async () => {
@@ -81,11 +86,13 @@ export default function QuizEditorPage() {
     }
 
     loadQuiz()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- toast context identity is unstable; effect must not re-run on toast changes
   }, [quizId, router])
 
   // Automatically select first question if none is active
   useEffect(() => {
     if (quiz && quiz.questions && quiz.questions.length > 0 && !activeQuestionId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- select first question before paint, intentional
       setActiveQuestionId(quiz.questions[0].id)
     }
   }, [quiz, activeQuestionId])
@@ -116,6 +123,17 @@ export default function QuizEditorPage() {
       mediaUrl: '',
     }
   }
+
+  // Reset the measured image aspect ratio when the active question or its media changes,
+  // so the pin-authoring preview re-measures the new image on load.
+  const activeMediaUrlForAspect = (() => {
+    const q = quiz?.questions?.find((qq: any) => qq.id === activeQuestionId)
+    return q ? parseQuestionContent(q.questionText).mediaUrl : ''
+  })()
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset measured aspect before paint, intentional
+    setPinAspect(null)
+  }, [activeQuestionId, activeMediaUrlForAspect])
 
   const handleAddQuestion = async () => {
     setSaving(true)
@@ -149,6 +167,7 @@ export default function QuizEditorPage() {
           if (activeQuestionId === qId) {
             setActiveQuestionId(updatedQuestions.length > 0 ? updatedQuestions[0].id : null)
           }
+          setMobileSettingsOpen(false)
           toast.success('Đã xóa câu hỏi thành công!')
         } catch (error) {
           console.error('Error deleting question:', error)
@@ -206,13 +225,22 @@ export default function QuizEditorPage() {
     }
   }
 
+  // Track in-flight save requests so launching a game can wait for them,
+  // otherwise a blur-save racing createGameSession snapshots stale content.
+  const pendingSavesRef = useRef<Set<Promise<unknown>>>(new Set())
+  const trackSave = <T,>(p: Promise<T>): Promise<T> => {
+    pendingSavesRef.current.add(p)
+    p.catch(() => {}).finally(() => pendingSavesRef.current.delete(p))
+    return p
+  }
+
   const handleQuestionTextBlur = async (questionId: string, newText: string, timeLimit: number, type: string, correctAns: string) => {
     try {
       const q = quiz.questions.find((item: any) => item.id === questionId)
       const mediaUrl = q ? parseQuestionContent(q.questionText).mediaUrl : ''
       const formattedContent = JSON.stringify({ text: newText, mediaUrl })
 
-      await updateQuestion(questionId, formattedContent, timeLimit, type, correctAns)
+      await trackSave(updateQuestion(questionId, formattedContent, timeLimit, type, correctAns))
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((item: any) =>
@@ -228,7 +256,7 @@ export default function QuizEditorPage() {
 
   const handleQuestionTextUpdate = async (questionId: string, newContent: string, timeLimit: number, type: string, correctAns: string) => {
     try {
-      await updateQuestion(questionId, newContent, timeLimit, type, correctAns)
+      await trackSave(updateQuestion(questionId, newContent, timeLimit, type, correctAns))
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((item: any) =>
@@ -244,7 +272,7 @@ export default function QuizEditorPage() {
 
   const handleQuestionTimeChange = async (questionId: string, contentStr: string, newTimeLimit: number, type: string, correctAns: string) => {
     try {
-      await updateQuestion(questionId, contentStr, newTimeLimit, type, correctAns)
+      await trackSave(updateQuestion(questionId, contentStr, newTimeLimit, type, correctAns))
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((q: any) =>
@@ -266,7 +294,7 @@ export default function QuizEditorPage() {
       if (newType === 'pin_answer') correctAns = '50,50'
       if (newType === 'poll') correctAns = 'POLL'
 
-      await updateQuestion(questionId, contentStr, timeLimit, newType, correctAns)
+      await trackSave(updateQuestion(questionId, contentStr, timeLimit, newType, correctAns))
 
       // Reload details from API to keep fully in sync
       const updatedQuiz = await getQuizById(quizId)
@@ -278,7 +306,7 @@ export default function QuizEditorPage() {
 
   const handleQuestionCorrectAnswerBlur = async (questionId: string, contentStr: string, timeLimit: number, type: string, correctAns: string) => {
     try {
-      await updateQuestion(questionId, contentStr, timeLimit, type, correctAns)
+      await trackSave(updateQuestion(questionId, contentStr, timeLimit, type, correctAns))
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((q: any) =>
@@ -296,7 +324,7 @@ export default function QuizEditorPage() {
       const opt = q?.options.find((o: any) => o.id === optionId)
       const mediaUrl = opt ? opt.mediaUrl : ''
 
-      await updateAnswerOption(quizId, questionId, optionId, newText, isCorrect, mediaUrl)
+      await trackSave(updateAnswerOption(quizId, questionId, optionId, newText, isCorrect, mediaUrl))
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((item: any) => {
@@ -318,7 +346,7 @@ export default function QuizEditorPage() {
 
   const handleUpdateOption = async (questionId: string, optionId: string, optionText: string, isCorrect: boolean, mediaUrl: string = '') => {
     try {
-      await updateAnswerOption(quizId, questionId, optionId, optionText, isCorrect, mediaUrl)
+      await trackSave(updateAnswerOption(quizId, questionId, optionId, optionText, isCorrect, mediaUrl))
       setQuiz((prev: any) => ({
         ...prev,
         questions: prev.questions.map((q: any) => {
@@ -375,6 +403,13 @@ export default function QuizEditorPage() {
   const handleStartGame = async (mode: 'classic' | 'solo') => {
     setSaving(true)
     try {
+      // Flush any focused field's blur-save, then wait for all in-flight saves
+      // so the session snapshot includes the latest edits.
+      ;(document.activeElement as HTMLElement | null)?.blur?.()
+      await new Promise((r) => setTimeout(r, 0))
+      while (pendingSavesRef.current.size > 0) {
+        await Promise.allSettled([...pendingSavesRef.current])
+      }
       // License/Pro gating deferred — Solo is open for all hosts for now.
       // See backend/internal/pkg/license/LICENSE_DEFERRED.md
       const modeConfig = JSON.stringify({ game_mode: mode === 'solo' ? 'player_paced' : 'host_paced' })
@@ -614,46 +649,143 @@ export default function QuizEditorPage() {
   const inputClass =
     'bg-[#12141a] border-[#2c313d] focus:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] rounded-xl'
 
+  const slideSettingsContent = activeQuestion ? (
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <span className="text-sm text-[#9a9eab] block">Test knowledge</span>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: 'multiple_choice', name: 'Quiz' },
+              { id: 'true_false', name: 'True/False' },
+              { id: 'short_answer', name: 'Type answer' },
+              { id: 'pin_answer', name: 'Pin answer' },
+            ].map(typeItem => (
+              <button
+                key={typeItem.id}
+                onClick={() => handleQuestionTypeChange(activeQuestion.id, activeQuestion.questionText, activeQuestion.timeLimit, typeItem.id)}
+                className={`flex items-center justify-center p-3 min-h-11 rounded-xl border text-center transition-all cursor-pointer text-xs font-medium ${
+                  activeType === typeItem.id
+                    ? 'border-[#e85d4c] bg-[#e85d4c]/10 text-[#e85d4c]'
+                    : 'bg-[#12141a] border-[#2c313d] text-[#9a9eab] hover:text-[#f2f0eb] hover:border-[#3d4454]'
+                }`}
+              >
+                {typeItem.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <span className="text-sm text-[#9a9eab] block">Collect opinions</span>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: 'poll', name: 'Poll' },
+            ].map(typeItem => (
+              <button
+                key={typeItem.id}
+                onClick={() => handleQuestionTypeChange(activeQuestion.id, activeQuestion.questionText, activeQuestion.timeLimit, typeItem.id)}
+                className={`flex items-center justify-center p-3 min-h-11 rounded-xl border text-center transition-all cursor-pointer text-xs font-medium ${
+                  activeType === typeItem.id
+                    ? 'border-[#e85d4c] bg-[#e85d4c]/10 text-[#e85d4c]'
+                    : 'bg-[#12141a] border-[#2c313d] text-[#9a9eab] hover:text-[#f2f0eb] hover:border-[#3d4454]'
+                }`}
+              >
+                {typeItem.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2 pt-4 border-t border-[#2c313d]">
+        <label className="text-sm text-[#9a9eab]">Time limit</label>
+        <select
+          value={activeQuestion.timeLimit}
+          onChange={(e) =>
+            handleQuestionTimeChange(
+              activeQuestion.id,
+              activeQuestion.questionText,
+              Number(e.target.value),
+              activeType,
+              activeQuestion.correct_answer
+            )
+          }
+          className={`w-full ${inputClass} px-4 py-3 text-base sm:text-sm font-medium cursor-pointer`}
+        >
+          {[10, 20, 30, 45, 60, 90, 120].map((t) => (
+            <option key={t} value={t} className="bg-[#12141a] text-[#f2f0eb]">
+              {t} seconds
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm text-[#9a9eab]">Score reward</label>
+        <div className="bg-[#12141a] border border-[#2c313d] rounded-xl px-4 py-3 text-sm font-medium text-[#2dd4bf] flex items-center justify-between">
+          <span className="text-[#c5c2ba]">Standard points</span>
+          <span>{activeQuestion.points || 1000} pts</span>
+        </div>
+      </div>
+
+      <div className="pt-6 border-t border-[#2c313d]">
+        <Button
+          onClick={() => handleDeleteQuestion(activeQuestion.id)}
+          variant="outline"
+          className="w-full border-[#2c313d] bg-transparent hover:bg-[#e85d4c]/10 hover:border-[#e85d4c]/40 text-[#e85d4c] font-semibold py-3 rounded-xl cursor-pointer gap-2"
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete slide
+        </Button>
+      </div>
+    </div>
+  ) : (
+    <p className="text-sm text-[#9a9eab]">Select a slide to view settings</p>
+  )
+
   return (
     <GameBackground variant="dashboard">
       <div className="flex-1 flex flex-col relative">
 
       <header className="border-b border-[#2c313d] bg-[#1a1d26]/90 backdrop-blur-xl sticky top-0 z-50" data-tour="quiz-editor-header">
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between gap-4 max-w-7xl">
-          <div className="flex items-center gap-4 min-w-0">
-            <Link href="/dashboard">
+        <div className="container mx-auto px-4 sm:px-6 py-4 flex flex-wrap gap-y-3 items-center justify-between gap-4 max-w-7xl">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1 sm:flex-initial">
+            <Link href="/dashboard" className="shrink-0">
               <Button
                 variant="ghost"
-                className="text-[#c5c2ba] hover:text-[#f2f0eb] hover:bg-[#12141a] rounded-xl gap-2 h-10 px-3"
+                className="text-[#c5c2ba] hover:text-[#f2f0eb] hover:bg-[#12141a] rounded-xl gap-2 h-10 px-2.5 sm:px-3"
               >
                 <ArrowLeft className="h-4 w-4" />
-                Back
+                <span className="hidden sm:inline">Back</span>
               </Button>
             </Link>
             <div className="h-6 w-px bg-[#2c313d] hidden sm:block" />
-            <div className="hidden sm:flex items-center gap-3 min-w-0">
-              <BrandMark size="sm" href="/dashboard" />
-              <h1 className="text-base font-semibold text-[#f2f0eb] truncate">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="hidden sm:block">
+                <BrandMark size="sm" href="/dashboard" />
+              </span>
+              <h1 className="text-sm sm:text-base font-semibold text-[#f2f0eb] truncate">
                 {quiz.title}
               </h1>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setEditTitle(quiz.title)
-                  setEditDescription(quiz.description || '')
-                  setQuizSettingsOpen(true)
-                }}
-                title="Cấu hình Quiz"
-                className="h-8 w-8 text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-[#12141a] rounded-lg shrink-0 cursor-pointer"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setEditTitle(quiz.title)
+                setEditDescription(quiz.description || '')
+                setQuizSettingsOpen(true)
+              }}
+              title="Cấu hình Quiz"
+              className="h-8 w-8 text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-[#12141a] rounded-lg shrink-0 cursor-pointer"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
           </div>
 
-          <div className="flex flex-col items-end gap-2 shrink-0" data-tour="launch-mode">
-            <div className="flex gap-2 flex-wrap justify-end">
+          <div className="flex flex-col items-end gap-2 shrink-0 w-full sm:w-auto" data-tour="launch-mode">
+            <div className="w-full sm:w-auto grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
               <Button
                 onClick={openImportPanel}
                 disabled={saving}
@@ -689,16 +821,16 @@ export default function QuizEditorPage() {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden h-[calc(100vh-73px)] font-sans">
-        <aside className="w-64 border-r border-[#2c313d] bg-[#1a1d26] flex flex-col h-[calc(100vh-73px)] select-none" data-tour="question-slides">
-          <div className="p-4 border-b border-[#2c313d] flex items-center justify-between shrink-0">
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0 lg:h-[calc(100dvh-73px)] overflow-visible lg:overflow-hidden font-sans">
+        <aside className="w-full lg:w-64 lg:shrink-0 border-b lg:border-b-0 lg:border-r border-[#2c313d] bg-[#1a1d26] flex flex-col h-auto lg:h-full select-none shrink-0" data-tour="question-slides">
+          <div className="px-4 py-2 lg:p-4 border-b border-[#2c313d] flex items-center justify-between shrink-0">
             <h3 className="text-sm text-[#9a9eab] font-medium">Questions</h3>
             <span className="text-xs font-medium bg-[#12141a] text-[#c5c2ba] px-2 py-0.5 rounded-lg border border-[#2c313d]">
               {quiz.questions?.length || 0}
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-2" ref={slidesRef}>
+          <div className="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible lg:overflow-y-auto p-3 lg:p-4 lg:flex-1" ref={slidesRef}>
             {quiz.questions?.map((q: any, idx: number) => {
               const isActive = q.id === activeQuestionId
               const parsed = parseQuestionContent(q.questionText)
@@ -709,7 +841,7 @@ export default function QuizEditorPage() {
                   key={`slide-${q.id || idx}-${idx}`}
                   data-slide-id={q.id}
                   onClick={() => setActiveQuestionId(q.id)}
-                  className={`group relative flex items-center gap-3 p-2.5 rounded-xl border transition-all duration-200 cursor-pointer ${
+                  className={`group relative flex items-center gap-2 lg:gap-3 p-2.5 rounded-xl border transition-all duration-200 cursor-pointer w-44 shrink-0 lg:w-auto lg:shrink ${
                     isActive
                       ? 'bg-[#e85d4c]/10 border-[#e85d4c]'
                       : 'bg-[#12141a] border-[#2c313d] hover:border-[#3d4454]'
@@ -733,7 +865,7 @@ export default function QuizEditorPage() {
                   </div>
 
                   {parsed.mediaUrl && (
-                    <div className="w-10 h-7 rounded-lg border border-[#2c313d] bg-[#12141a] overflow-hidden shrink-0">
+                    <div className="hidden lg:block w-10 h-7 rounded-lg border border-[#2c313d] bg-[#12141a] overflow-hidden shrink-0">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={parsed.mediaUrl} alt="" className="w-full h-full object-cover" />
                     </div>
@@ -744,7 +876,7 @@ export default function QuizEditorPage() {
                       e.stopPropagation()
                       handleDeleteQuestion(q.id)
                     }}
-                    className="opacity-0 group-hover:opacity-100 text-[#9a9eab] hover:text-[#e85d4c] transition-opacity bg-transparent border-none cursor-pointer p-1 shrink-0"
+                    className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-[#9a9eab] hover:text-[#e85d4c] transition-opacity bg-transparent border-none cursor-pointer p-2 shrink-0"
                     aria-label="Delete slide"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -752,9 +884,19 @@ export default function QuizEditorPage() {
                 </div>
               )
             })}
+
+            <button
+              onClick={handleAddQuestion}
+              disabled={saving}
+              className="lg:hidden flex items-center justify-center gap-1.5 w-24 shrink-0 rounded-xl border border-dashed border-[#2c313d] bg-[#12141a] text-[#9a9eab] hover:text-[#f2f0eb] text-xs font-semibold cursor-pointer disabled:opacity-40 min-h-14"
+              aria-label="Add slide"
+            >
+              <Plus className="h-4 w-4" />
+              Add
+            </button>
           </div>
 
-          <div className="p-4 border-t border-[#2c313d] shrink-0">
+          <div className="hidden lg:block p-4 border-t border-[#2c313d] shrink-0">
             <Button
               onClick={handleAddQuestion}
               disabled={saving}
@@ -767,7 +909,7 @@ export default function QuizEditorPage() {
           </div>
         </aside>
 
-        <section className="flex-1 bg-[#12141a] p-8 overflow-y-auto flex flex-col space-y-6 h-[calc(100vh-73px)]" data-tour="question-editor">
+        <section className="flex-1 bg-[#12141a] p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8 lg:pb-8 overflow-y-auto flex flex-col space-y-6 h-auto lg:h-full" data-tour="question-editor">
           {!activeQuestion ? (
             <div className="h-full flex flex-col items-center justify-center space-y-5 text-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-[#2c313d] bg-[#1a1d26]">
@@ -797,7 +939,7 @@ export default function QuizEditorPage() {
                   defaultValue={activeParsedContent.text}
                   placeholder="Type your question here..."
                   rows={2}
-                  className={`w-full ${inputClass} px-6 py-5 text-xl md:text-2xl font-semibold resize-none transition-all text-center`}
+                  className={`w-full ${inputClass} px-3 sm:px-6 py-3 sm:py-5 text-base sm:text-xl md:text-2xl font-semibold resize-none transition-all text-center`}
                   onBlur={(e) =>
                     handleQuestionTextBlur(
                       activeQuestion.id,
@@ -812,9 +954,10 @@ export default function QuizEditorPage() {
 
               <div
                 onClick={activeType === 'pin_answer' && activeParsedContent.mediaUrl ? handlePinImageClick : undefined}
-                className={`w-full aspect-video md:h-80 md:w-auto mx-auto rounded-2xl border border-dashed border-[#2c313d] bg-[#1a1d26] flex flex-col items-center justify-center relative overflow-hidden group ${
-                  activeType === 'pin_answer' && activeParsedContent.mediaUrl ? 'cursor-crosshair' : ''
-                }`}
+                className={`w-full mx-auto rounded-2xl border border-dashed border-[#2c313d] bg-[#1a1d26] flex flex-col items-center justify-center relative overflow-hidden group ${
+                  activeType === 'pin_answer' ? 'max-w-2xl' : 'aspect-video md:h-80 md:w-auto'
+                } ${activeType === 'pin_answer' && activeParsedContent.mediaUrl ? 'cursor-crosshair' : ''}`}
+                style={activeType === 'pin_answer' ? { aspectRatio: pinAspect ?? 16 / 9 } : undefined}
               >
                 {activeParsedContent.mediaUrl ? (
                   <>
@@ -823,6 +966,10 @@ export default function QuizEditorPage() {
                       src={activeParsedContent.mediaUrl}
                       alt="Question Graphic"
                       className="w-full h-full object-contain pointer-events-none"
+                      onLoad={(e) => {
+                        const im = e.currentTarget
+                        if (im.naturalWidth && im.naturalHeight) setPinAspect(im.naturalWidth / im.naturalHeight)
+                      }}
                     />
 
                     {activeType === 'pin_answer' && (() => {
@@ -837,7 +984,7 @@ export default function QuizEditorPage() {
                       )
                     })()}
 
-                    <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute top-4 right-4 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       <Button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -951,7 +1098,7 @@ export default function QuizEditorPage() {
                       return (
                         <div
                           key={`opt-${activeQuestion.id}-${option.id}`}
-                          className={`relative p-5 rounded-xl border transition-all duration-200 flex flex-col gap-4 bg-[#1a1d26] ${
+                          className={`relative p-3 sm:p-5 rounded-xl border transition-all duration-200 flex flex-col gap-4 bg-[#1a1d26] ${
                             isCorrect && (activeType === 'multiple_choice' || activeType === 'true_false')
                               ? 'border-[#2dd4bf]/50 ring-1 ring-[#2dd4bf]/20 bg-[#2dd4bf]/5'
                               : 'border-[#2c313d]'
@@ -966,7 +1113,7 @@ export default function QuizEditorPage() {
                               type="text"
                               defaultValue={option.optionText}
                               placeholder={`Answer choice ${oIndex + 1}...`}
-                              className="flex-1 bg-transparent border-none text-[#f2f0eb] text-base font-medium placeholder:text-[#5c6170] focus:outline-none"
+                              className="flex-1 min-w-0 bg-transparent border-none text-[#f2f0eb] text-base font-medium placeholder:text-[#5c6170] focus:outline-none"
                               onBlur={(e) =>
                                 handleOptionTextBlur(
                                   activeQuestion.id,
@@ -979,7 +1126,7 @@ export default function QuizEditorPage() {
                             {activeQuestion.options.length > 2 && (
                               <button
                                 onClick={() => handleDeleteOption(option.id, activeQuestion.id)}
-                                className="text-[#9a9eab] hover:text-[#e85d4c] transition-colors bg-transparent border-none cursor-pointer p-1"
+                                className="text-[#9a9eab] hover:text-[#e85d4c] transition-colors bg-transparent border-none cursor-pointer p-2"
                                 aria-label="Delete option"
                               >
                                 <X className="h-4 w-4" />
@@ -995,7 +1142,7 @@ export default function QuizEditorPage() {
                                   <img src={option.mediaUrl} alt="option gif" className="w-full h-full object-cover" />
                                   <button
                                     onClick={() => handleRemoveGif('option', activeQuestion.id, option.id)}
-                                    className="absolute inset-0 bg-[#12141a]/90 flex items-center justify-center text-[#e85d4c] text-[10px] font-medium opacity-0 group-hover/gif:opacity-100 transition-opacity border-none cursor-pointer gap-1"
+                                    className="absolute inset-0 bg-[#12141a]/90 flex items-center justify-center text-[#e85d4c] text-[10px] font-medium opacity-100 md:opacity-0 md:group-hover/gif:opacity-100 transition-opacity border-none cursor-pointer gap-1"
                                   >
                                     <X className="h-3 w-3" />
                                     Remove
@@ -1004,7 +1151,7 @@ export default function QuizEditorPage() {
                               ) : (
                                 <button
                                   onClick={() => triggerGiphy('option', activeQuestion.id, option.id)}
-                                  className="text-xs font-medium text-[#c5c2ba] bg-[#12141a] hover:bg-[#12141a]/80 px-3 py-1.5 rounded-xl border border-[#2c313d] cursor-pointer flex items-center gap-1.5"
+                                  className="min-h-10 text-xs font-medium text-[#c5c2ba] bg-[#12141a] hover:bg-[#12141a]/80 px-3 py-1.5 rounded-xl border border-[#2c313d] cursor-pointer flex items-center gap-1.5"
                                 >
                                   <ImagePlus className="h-3.5 w-3.5" />
                                   Add GIF
@@ -1023,7 +1170,7 @@ export default function QuizEditorPage() {
                                     option.mediaUrl
                                   )
                                 }
-                                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border cursor-pointer flex items-center gap-1.5 ${
+                                className={`px-3 py-2.5 sm:py-1.5 rounded-xl text-xs font-medium transition-all border cursor-pointer flex items-center gap-1.5 ${
                                   isCorrect
                                     ? 'bg-[#2dd4bf]/15 border-[#2dd4bf]/40 text-[#2dd4bf]'
                                     : 'bg-[#12141a] border-[#2c313d] text-[#9a9eab] hover:text-[#f2f0eb]'
@@ -1044,109 +1191,50 @@ export default function QuizEditorPage() {
           )}
         </section>
 
-        <aside className="w-72 border-l border-[#2c313d] bg-[#1a1d26] p-6 space-y-6 overflow-y-auto select-none h-[calc(100vh-73px)]">
+        <aside className="hidden lg:block w-72 shrink-0 border-l border-[#2c313d] bg-[#1a1d26] p-6 space-y-6 overflow-y-auto select-none h-full">
           <h3 className="text-sm text-[#9a9eab] font-medium">Slide settings</h3>
-
-          {activeQuestion ? (
-            <div className="space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <span className="text-sm text-[#9a9eab] block">Test knowledge</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'multiple_choice', name: 'Quiz' },
-                      { id: 'true_false', name: 'True/False' },
-                      { id: 'short_answer', name: 'Type answer' },
-                      { id: 'pin_answer', name: 'Pin answer' },
-                    ].map(typeItem => (
-                      <button
-                        key={typeItem.id}
-                        onClick={() => handleQuestionTypeChange(activeQuestion.id, activeQuestion.questionText, activeQuestion.timeLimit, typeItem.id)}
-                        className={`flex items-center justify-center p-3 rounded-xl border text-center transition-all cursor-pointer text-xs font-medium ${
-                          activeType === typeItem.id
-                            ? 'border-[#e85d4c] bg-[#e85d4c]/10 text-[#e85d4c]'
-                            : 'bg-[#12141a] border-[#2c313d] text-[#9a9eab] hover:text-[#f2f0eb] hover:border-[#3d4454]'
-                        }`}
-                      >
-                        {typeItem.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <span className="text-sm text-[#9a9eab] block">Collect opinions</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'poll', name: 'Poll' },
-                    ].map(typeItem => (
-                      <button
-                        key={typeItem.id}
-                        onClick={() => handleQuestionTypeChange(activeQuestion.id, activeQuestion.questionText, activeQuestion.timeLimit, typeItem.id)}
-                        className={`flex items-center justify-center p-3 rounded-xl border text-center transition-all cursor-pointer text-xs font-medium ${
-                          activeType === typeItem.id
-                            ? 'border-[#e85d4c] bg-[#e85d4c]/10 text-[#e85d4c]'
-                            : 'bg-[#12141a] border-[#2c313d] text-[#9a9eab] hover:text-[#f2f0eb] hover:border-[#3d4454]'
-                        }`}
-                      >
-                        {typeItem.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2 pt-4 border-t border-[#2c313d]">
-                <label className="text-sm text-[#9a9eab]">Time limit</label>
-                <select
-                  value={activeQuestion.timeLimit}
-                  onChange={(e) =>
-                    handleQuestionTimeChange(
-                      activeQuestion.id,
-                      activeQuestion.questionText,
-                      Number(e.target.value),
-                      activeType,
-                      activeQuestion.correct_answer
-                    )
-                  }
-                  className={`w-full ${inputClass} px-4 py-3 text-sm font-medium cursor-pointer`}
-                >
-                  {[10, 20, 30, 45, 60, 90, 120].map((t) => (
-                    <option key={t} value={t} className="bg-[#12141a] text-[#f2f0eb]">
-                      {t} seconds
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm text-[#9a9eab]">Score reward</label>
-                <div className="bg-[#12141a] border border-[#2c313d] rounded-xl px-4 py-3 text-sm font-medium text-[#2dd4bf] flex items-center justify-between">
-                  <span className="text-[#c5c2ba]">Standard points</span>
-                  <span>{activeQuestion.points || 1000} pts</span>
-                </div>
-              </div>
-
-              <div className="pt-6 border-t border-[#2c313d]">
-                <Button
-                  onClick={() => handleDeleteQuestion(activeQuestion.id)}
-                  variant="outline"
-                  className="w-full border-[#2c313d] bg-transparent hover:bg-[#e85d4c]/10 hover:border-[#e85d4c]/40 text-[#e85d4c] font-semibold py-3 rounded-xl cursor-pointer gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete slide
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-[#9a9eab]">Select a slide to view settings</p>
-          )}
+          {slideSettingsContent}
         </aside>
       </div>
 
+      {activeQuestion && (
+        <button
+          type="button"
+          onClick={() => setMobileSettingsOpen(true)}
+          className="lg:hidden fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 z-50 flex items-center gap-2 rounded-full bg-[#1a1d26] border border-[#2c313d] text-[#f2f0eb] shadow-lg px-4 py-3 text-sm font-semibold cursor-pointer"
+          aria-label="Slide settings"
+        >
+          <SlidersHorizontal className="w-5 h-5" />
+          Settings
+        </button>
+      )}
+
+      {mobileSettingsOpen && (
+        <div className="lg:hidden fixed inset-0 z-[70]">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setMobileSettingsOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl border-t border-[#2c313d] bg-[#1a1d26] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm text-[#9a9eab] font-medium">Slide settings</h3>
+              <button
+                type="button"
+                onClick={() => setMobileSettingsOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-[#9a9eab] hover:text-[#f2f0eb] cursor-pointer -mr-2"
+                aria-label="Close settings"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {slideSettingsContent}
+          </div>
+        </div>
+      )}
+
       {importOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-[#2c313d] bg-[#1a1d26] p-6 space-y-4 shadow-2xl max-h-[85vh] overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl border border-[#2c313d] bg-[#1a1d26] p-6 space-y-4 shadow-2xl max-h-[85dvh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-bold text-[#f2f0eb]">Thêm câu từ quiz khác</h2>
@@ -1158,7 +1246,7 @@ export default function QuizEditorPage() {
                 size="sm"
                 variant="ghost"
                 onClick={() => setImportOpen(false)}
-                className="text-[#9a9eab] hover:text-[#f2f0eb]"
+                className="h-10 w-10 p-0 text-[#9a9eab] hover:text-[#f2f0eb]"
               >
                 <X className="w-4 h-4" />
               </Button>
@@ -1168,7 +1256,7 @@ export default function QuizEditorPage() {
               value={importSourceId}
               onChange={(e) => loadImportSource(e.target.value)}
               disabled={importLoading}
-              className="w-full h-11 rounded-xl bg-[#12141a] border border-[#2c313d] text-[#f2f0eb] text-sm px-3"
+              className="w-full h-11 rounded-xl bg-[#12141a] border border-[#2c313d] text-[#f2f0eb] text-base sm:text-sm px-3"
             >
               <option value="">Chọn quiz nguồn…</option>
               {otherQuizzes.map((q) => (
@@ -1183,7 +1271,7 @@ export default function QuizEditorPage() {
             )}
 
             {importSourceQs.length > 0 && (
-              <div className="space-y-2 max-h-56 overflow-y-auto">
+              <div className="space-y-2 max-h-[40dvh] sm:max-h-56 overflow-y-auto">
                 {importSourceQs.map((q: any) => {
                   const id = String(q.id)
                   const checked = importSelected.has(id)
@@ -1200,7 +1288,7 @@ export default function QuizEditorPage() {
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggleImportQ(id)}
-                        className="mt-1 accent-[#e85d4c]"
+                        className="mt-1 h-5 w-5 shrink-0 accent-[#e85d4c]"
                       />
                       <span className="text-sm text-[#f2f0eb] line-clamp-2">
                         {q.questionText || '—'}
@@ -1233,12 +1321,12 @@ export default function QuizEditorPage() {
 
       {quizSettingsOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-[#2c313d] bg-[#1a1d26] p-6 space-y-4 shadow-2xl">
+          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-[#2c313d] bg-[#1a1d26] p-4 sm:p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#2c313d] pb-3">
               <h2 className="text-lg font-bold text-[#f2f0eb]">Cấu hình Quiz</h2>
               <button
                 onClick={() => setQuizSettingsOpen(false)}
-                className="text-[#9a9eab] hover:text-[#f2f0eb] transition-colors bg-transparent border-none cursor-pointer"
+                className="flex h-10 w-10 items-center justify-center rounded-lg text-[#9a9eab] hover:text-[#f2f0eb] transition-colors bg-transparent border-none cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1268,18 +1356,18 @@ export default function QuizEditorPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2">
               <Button
                 variant="outline"
                 onClick={() => setQuizSettingsOpen(false)}
-                className="border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-[#12141a] px-4 rounded-xl"
+                className="h-11 w-full sm:h-10 sm:w-auto border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-[#12141a] px-4 rounded-xl"
               >
                 Hủy
               </Button>
               <Button
                 onClick={handleSaveQuizSettings}
                 disabled={saving}
-                className="bg-[#e85d4c] hover:bg-[#d44e3e] text-white px-5 rounded-xl border-none"
+                className="h-11 w-full sm:h-10 sm:w-auto bg-[#e85d4c] hover:bg-[#d44e3e] text-white px-5 rounded-xl border-none"
               >
                 {saving ? 'Đang lưu...' : 'Lưu cài đặt'}
               </Button>

@@ -26,11 +26,11 @@ export function GameBackground({
   return (
     <div
       className={cn(
-        'relative min-h-[100dvh] w-full bg-[#12141a] text-[#f2f0eb] overflow-hidden flex flex-col',
+        'relative min-h-[100dvh] w-full bg-[#12141a] text-[#f2f0eb] overflow-x-clip overscroll-none flex flex-col',
         className
       )}
     >
-      <div className="absolute inset-0 pointer-events-none z-0" aria-hidden>
+      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden>
         <div
           className={cn(
             'absolute -top-[20%] -left-[10%] h-[55vmax] w-[55vmax] rounded-full bg-gradient-to-br blur-[100px] animate-soft-drift',

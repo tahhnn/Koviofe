@@ -27,6 +27,7 @@ interface Question {
   type?: string
   index?: number
   total?: number
+  activeUntil?: string
 }
 
 const parseQuestionContent = (contentStr: string) => {
@@ -63,6 +64,10 @@ export default function PlayerGameScreen() {
   const [loading, setLoading] = useState(true)
   const [participantId, setParticipantId] = useState('')
   const [playerToken, setPlayerToken] = useState('')
+  const [roundLeaderboard, setRoundLeaderboard] = useState<{ id: string; nickname: string; score: number }[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [pinAspect, setPinAspect] = useState<number | null>(null)
 
   const [localQuestionIndex, setLocalQuestionIndex] = useState<number>(-1)
   const [totalQuestions, setTotalQuestions] = useState<number>(0)
@@ -103,12 +108,18 @@ export default function PlayerGameScreen() {
     setFeedback(null)
     setCorrectAnswer(null)
     setPollResults(null)
+    setRoundLeaderboard([])
+    setSubmitError(null)
+    setPinAspect(null)
     pendingFeedbackRef.current = null
   }, [])
 
   const pinHint = typeof window !== 'undefined'
     ? sessionStorage.getItem(`pin_code_${sessionId}`) || undefined
     : undefined
+  const myNickname = typeof window !== 'undefined'
+    ? sessionStorage.getItem(`nickname_${sessionId}`) || ''
+    : ''
   const { connected, send, on } = useWebSocket(sessionId, pinHint)
 
   const runStartCountdown = useCallback((): Promise<void> => {
@@ -130,7 +141,7 @@ export default function PlayerGameScreen() {
     })
   }, [])
 
-  const applyQuestion = useCallback((question: Question, index?: number) => {
+  const applyQuestion = useCallback((question: Question, index?: number, activeUntil?: string) => {
     if (typeof question.total === 'number' && question.total > 0) {
       setTotalQuestions(question.total)
     }
@@ -140,8 +151,11 @@ export default function PlayerGameScreen() {
       setLocalQuestionIndex(question.index)
     }
     setCurrentQuestion(question)
-    setTimeLeft(question?.timeLimit || 30)
-    startTimeRef.current = Date.now()
+    const durationMs = (question?.timeLimit || 30) * 1000
+    const activeUntilMs = activeUntil ? Date.parse(activeUntil) : NaN
+    const effectiveUntil = Number.isFinite(activeUntilMs) ? activeUntilMs : Date.now() + durationMs
+    setTimeLeft(Math.max(0, Math.ceil((effectiveUntil - Date.now()) / 1000)))
+    startTimeRef.current = effectiveUntil - durationMs
     setSubmitted(false)
     submittingRef.current = false
     resetAnswerInputs(question)
@@ -150,7 +164,7 @@ export default function PlayerGameScreen() {
   const loadSoloFirstQuestion = useCallback(async (pToken: string) => {
     const question = await getQuestionByIndex(sessionId, 0, pToken || undefined)
     if (!question) return
-    applyQuestion(question, 0)
+    applyQuestion(question, 0, question.activeUntil)
   }, [sessionId, applyQuestion])
 
   const beginGameFromLobby = useCallback(async (opts: { playerPaced: boolean; pToken: string }) => {
@@ -162,8 +176,7 @@ export default function PlayerGameScreen() {
     }
   }, [runStartCountdown, loadSoloFirstQuestion])
 
-  useEffect(() => {
-    const loadGameState = async () => {
+  const loadGameState = useCallback(async () => {
       try {
         const pToken = sessionStorage.getItem(`player_token_${sessionId}`)
         if (pToken) setPlayerToken(pToken)
@@ -208,7 +221,9 @@ export default function PlayerGameScreen() {
             try {
               const question = await getQuestionByIndex(sessionId, idx, pToken || undefined)
               if (question) {
-                applyQuestion(question, idx)
+                // Resync countdown to the server deadline — the timer keeps
+                // running server-side across a reload.
+                applyQuestion(question, idx, question.activeUntil || cq.active_until)
                 if (session.questionCount > 0 && !(typeof question.total === 'number' && question.total > 0)) {
                   setTotalQuestions(session.questionCount)
                 }
@@ -227,16 +242,23 @@ export default function PlayerGameScreen() {
           const question = await getQuestionByIndex(sessionId, session.currentQuestionIndex, pToken || undefined)
           if (question) applyQuestion(question, session.currentQuestionIndex)
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading game state:', error)
-        router.push('/join')
+        const msg = String(error?.message || '')
+        if (msg === 'ROOM_FINISHED') {
+          router.push(`/results/${sessionId}`)
+        } else {
+          setLoadError('Không tải được phòng chơi')
+        }
       } finally {
         setLoading(false)
       }
-    }
-
-    loadGameState()
   }, [sessionId, router, applyQuestion])
+
+  useEffect(() => {
+    const t = setTimeout(loadGameState, 0)
+    return () => clearTimeout(t)
+  }, [loadGameState])
 
   useEffect(() => {
     if (loading) return
@@ -268,7 +290,9 @@ export default function PlayerGameScreen() {
         }
 
         if (!startSequenceRef.current && (session.currentQuestionIndex === undefined || session.currentQuestionIndex < 0)) {
-          await beginGameFromLobby({ playerPaced: false, pToken })
+          // Classic mode waits for the server's question:active event. Do not
+          // start a local countdown per player; late clients reconcile below.
+          startSequenceRef.current = true
           return
         }
 
@@ -282,7 +306,7 @@ export default function PlayerGameScreen() {
         if (cancelled || !question) return
 
         if (currentQuestionRef.current?.id !== question.id) {
-          applyQuestion(question, session.currentQuestionIndex)
+          applyQuestion(question, session.currentQuestionIndex, session.questionActiveUntil)
         }
       } catch (e) {
         console.error('Player lobby poll failed', e)
@@ -304,12 +328,13 @@ export default function PlayerGameScreen() {
       if (isPlayerPacedRef.current) return
       try {
         const question = await getQuestionByIndex(sessionId, data.questionIndex, playerTokenRef.current || undefined)
-        if (question) applyQuestion(question, data.questionIndex)
+        if (question) applyQuestion(question, data.questionIndex, data.activeUntil || question.activeUntil)
       } catch (e: any) {
         if (e.message === 'ROOM_FINISHED') {
           router.push(`/results/${sessionId}`)
         } else {
           console.error('Error loading question:', e)
+          setLoadError('Không tải được câu hỏi — bấm thử lại')
         }
       }
     })
@@ -329,6 +354,17 @@ export default function PlayerGameScreen() {
             percentage: s.percentage,
           }))
         )
+      }
+      if (Array.isArray(data?.leaderboard)) {
+        setRoundLeaderboard(
+          data.leaderboard.map((p: any) => ({
+            id: String(p.id ?? ''),
+            nickname: String(p.nickname ?? ''),
+            score: Number(p.score || 0),
+          }))
+        )
+      } else {
+        setRoundLeaderboard([])
       }
       if (pendingFeedbackRef.current) {
         setFeedback(pendingFeedbackRef.current)
@@ -350,7 +386,13 @@ export default function PlayerGameScreen() {
         setIsPlayerPaced(playerPaced)
         setGameState((prev: any) => ({ ...(prev || {}), ...session, status: 'playing' }))
 
-        await beginGameFromLobby({ playerPaced, pToken })
+        if (playerPaced) {
+          await beginGameFromLobby({ playerPaced: true, pToken })
+        } else {
+          // Classic mode starts only when the server publishes question:active.
+          // This prevents each client from running its own delayed countdown.
+          startSequenceRef.current = true
+        }
       } catch (e: any) {
         if (e.message === 'ROOM_FINISHED') {
           router.push(`/results/${sessionId}`)
@@ -375,6 +417,7 @@ export default function PlayerGameScreen() {
 
     submittingRef.current = true
     setSubmitted(true)
+    setSubmitError(null)
     const responseTimeMs = Date.now() - startTimeRef.current
     const timeSpent = Math.floor(responseTimeMs / 1000)
     const optionToSubmit = answerVal ?? ''
@@ -390,6 +433,11 @@ export default function PlayerGameScreen() {
           } else {
             pendingFeedbackRef.current = fb
           }
+        } else {
+          setSubmitted(false)
+          submittingRef.current = false
+          setSubmitError('Gửi câu trả lời thất bại — thử lại')
+          return
         }
       } else if (res) {
         const fb = {
@@ -426,7 +474,7 @@ export default function PlayerGameScreen() {
               router.push(`/results/${sessionId}`)
               return
             }
-            applyQuestion(nextQ, nextIndex)
+            applyQuestion(nextQ, nextIndex, nextQ.activeUntil)
           } catch (e: any) {
             const msg = String(e?.message || '')
             if (
@@ -450,6 +498,9 @@ export default function PlayerGameScreen() {
       submittingRef.current = false
       if (error.message === 'ROOM_FINISHED') {
         router.push(`/results/${sessionId}`)
+      } else {
+        setSubmitted(false)
+        setSubmitError('Gửi câu trả lời thất bại — thử lại')
       }
     }
   }, [sessionId, router, send, applyQuestion])
@@ -507,10 +558,36 @@ export default function PlayerGameScreen() {
   if (loading) {
     return (
       <GameBackground variant="arena">
-        <div className="flex-1 flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
             <div className="mx-auto h-10 w-10 rounded-full border-2 border-[#2c313d] border-t-[#e85d4c] animate-spin" />
             <p className="text-sm text-[#9a9eab] mt-4">Loading arena…</p>
+          </div>
+        </div>
+      </GameBackground>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <GameBackground variant="arena">
+        <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8 text-center">
+            <XCircle className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
+            <h1 className="text-xl font-semibold text-[#f2f0eb]">{loadError}</h1>
+            <p className="text-sm text-[#9a9eab] mt-2 leading-relaxed">
+              Kiểm tra kết nối mạng rồi thử lại.
+            </p>
+            <Button
+              onClick={() => {
+                setLoadError(null)
+                loadGameState()
+              }}
+              size="lg"
+              className="mt-6 w-full min-h-12 bg-[#f2f0eb] text-[#12141a] hover:bg-white font-semibold rounded-xl"
+            >
+              Thử lại
+            </Button>
           </div>
         </div>
       </GameBackground>
@@ -522,7 +599,7 @@ export default function PlayerGameScreen() {
       <GameBackground variant="arena">
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <p className="text-7xl font-black text-[#f2f0eb] tabular-nums">
+            <p className="text-6xl sm:text-7xl md:text-8xl font-black text-[#f2f0eb] tabular-nums">
               {startCountdown === 0 ? 'GO' : startCountdown}
             </p>
           </div>
@@ -534,8 +611,8 @@ export default function PlayerGameScreen() {
   if (!currentQuestion) {
     return (
       <GameBackground variant="arena">
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-8 text-center">
+        <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8 text-center">
             <Hourglass className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
             <h1 className="text-xl font-semibold text-[#f2f0eb]">Waiting for the host</h1>
             <p className="text-sm text-[#9a9eab] mt-2 leading-relaxed">
@@ -565,9 +642,15 @@ export default function PlayerGameScreen() {
 
   return (
     <GameBackground variant="arena">
-      <div className="flex-1 flex items-center justify-center p-4 md:p-6">
-        <div className="max-w-3xl w-full space-y-6">
-        {isPlayerPaced && (
+      <div className="flex-1 flex items-start sm:items-center justify-center overflow-y-auto p-3 sm:p-4 md:p-6 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="max-w-3xl w-full space-y-3 sm:space-y-5 md:space-y-6">
+        {!connected && (
+          <div className="sticky top-0 z-40 rounded-xl border border-[#f0b429]/35 bg-[#f0b429]/10 px-3 py-2 text-sm text-[#f0b429] text-center">
+            Đang kết nối lại…
+          </div>
+        )}
+
+        {isPlayerPaced && totalQuestions > 0 && (
           <div className="flex justify-between items-center text-sm text-[#9a9eab]">
             <span>Solo pace</span>
             <span className="text-[#f2f0eb]">
@@ -576,10 +659,10 @@ export default function PlayerGameScreen() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-5">
+        <div className="sticky top-0 z-30 rounded-2xl border border-[#2c313d] bg-[#1a1d26]/90 backdrop-blur-md p-3 sm:p-5">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm text-[#9a9eab]">Time left</span>
-            <span className={`text-2xl font-semibold tabular-nums ${timeLeft <= 5 ? 'text-[#e85d4c]' : 'text-[#f2f0eb]'}`}>
+            <span className={`text-xl sm:text-2xl font-semibold tabular-nums ${timeLeft <= 5 ? 'text-[#e85d4c]' : 'text-[#f2f0eb]'}`}>
               {timeLeft}s
             </span>
           </div>
@@ -598,14 +681,14 @@ export default function PlayerGameScreen() {
         {(() => {
           const parsedContent = parseQuestionContent(currentQuestion.questionText)
           return (
-            <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 md:p-8 space-y-4">
-              <h1 className="text-xl md:text-2xl font-semibold text-[#f2f0eb] leading-snug">
+            <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-4 sm:p-6 md:p-8 space-y-4">
+              <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-[#f2f0eb] leading-snug">
                 {parsedContent.text}
               </h1>
               {parsedContent.mediaUrl && !isPinAnswer && (
-                <div className="w-full aspect-video max-h-56 rounded-xl overflow-hidden border border-[#2c313d] bg-[#12141a] flex items-center justify-center">
+                <div className="w-full max-h-[30vh] sm:max-h-64 rounded-xl overflow-hidden border border-[#2c313d] bg-[#12141a] flex items-center justify-center">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={parsedContent.mediaUrl} alt="" className="w-full h-full object-contain" />
+                  <img src={parsedContent.mediaUrl} alt="" className="max-h-[30vh] sm:max-h-64 w-auto max-w-full object-contain" />
                 </div>
               )}
             </div>
@@ -618,7 +701,7 @@ export default function PlayerGameScreen() {
               const parsedContent = parseQuestionContent(currentQuestion.questionText)
               if (!parsedContent.mediaUrl) {
                 return (
-                  <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-8 text-center text-[#9a9eab]">
+                  <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-5 sm:p-8 text-center text-[#9a9eab]">
                     This pin question has no image. Ask the host to add media.
                   </div>
                 )
@@ -630,9 +713,10 @@ export default function PlayerGameScreen() {
                     Tap the image to place your pin
                   </p>
                   <div
-                    className={`relative w-full aspect-video rounded-2xl overflow-hidden border border-[#2c313d] bg-[#12141a] ${
+                    className={`relative w-full rounded-2xl overflow-hidden border border-[#2c313d] bg-[#12141a] touch-manipulation select-none ${
                       submitted ? 'pointer-events-none opacity-80' : 'cursor-crosshair'
                     }`}
+                    style={{ aspectRatio: pinAspect ?? 16 / 9 }}
                     onClick={(e) => {
                       if (submitted) return
                       const rect = e.currentTarget.getBoundingClientRect()
@@ -648,11 +732,15 @@ export default function PlayerGameScreen() {
                     <img
                       src={parsedContent.mediaUrl}
                       alt=""
+                      onLoad={(e) => {
+                        const im = e.currentTarget
+                        if (im.naturalWidth && im.naturalHeight) setPinAspect(im.naturalWidth / im.naturalHeight)
+                      }}
                       className="w-full h-full object-contain pointer-events-none"
                     />
                     {pinPosition && (
                       <div
-                        className="absolute w-8 h-8 rounded-full bg-[#e85d4c]/35 border-2 border-[#e85d4c] shadow-[0_0_12px_rgba(232,93,76,0.45)] pointer-events-none"
+                        className="absolute w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-[#e85d4c]/35 border-2 border-[#e85d4c] shadow-[0_0_12px_rgba(232,93,76,0.45)] pointer-events-none"
                         style={{
                           left: `${pinPosition.x}%`,
                           top: `${pinPosition.y}%`,
@@ -667,21 +755,33 @@ export default function PlayerGameScreen() {
           </div>
         ) : isShortAnswer ? (
           <div className="space-y-4">
-            {!submitted ? (
-              <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 space-y-3">
+            {!submitted && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  if (!shortAnswerText.trim()) return
+                  handleSubmitAnswer(shortAnswerText)
+                }}
+                className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-4 sm:p-6 space-y-3"
+              >
                 <label className="text-sm text-[#9a9eab]">Your answer</label>
                 <Input
                   type="text"
                   value={shortAnswerText}
                   onChange={(e) => setShortAnswerText(e.target.value)}
                   placeholder="Type here…"
-                  className="h-12 bg-[#12141a] border-[#2c313d] focus-visible:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] text-center text-lg rounded-xl"
+                  autoFocus
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="send"
+                  className="h-12 bg-[#12141a] border-[#2c313d] focus-visible:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] text-center text-lg md:text-lg rounded-xl"
                 />
-              </div>
-            ) : null}
+              </form>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 [&>*:last-child:nth-child(odd)]:col-span-2">
             {(currentQuestion.options || []).map((option, index) => {
               const isSelected = selectedAnswer === option.id
               return (
@@ -689,21 +789,21 @@ export default function PlayerGameScreen() {
                   key={option.id}
                   onClick={() => !submitted && setSelectedAnswer(option.id)}
                   disabled={submitted}
-                  className={`relative p-5 rounded-xl text-left font-medium transition-all duration-200 active:scale-[0.98] ${answerColors[index % answerColors.length]} ${
+                  className={`relative p-4 sm:p-5 min-h-14 flex items-center rounded-xl text-left font-medium transition-all duration-200 active:scale-[0.98] touch-manipulation select-none ${answerColors[index % answerColors.length]} ${
                     isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-[#12141a]' : ''
                   } ${submitted && !isSelected ? 'opacity-30' : ''}`}
                 >
-                  <div className="space-y-2">
+                  <div className="w-full min-w-0 space-y-2">
                     {option.optionText ? (
-                      <div className="text-base break-words font-semibold">{option.optionText}</div>
+                      <div className="text-base sm:text-lg [overflow-wrap:anywhere] font-semibold">{option.optionText}</div>
                     ) : null}
                     {option.mediaUrl ? (
-                      <div className="w-full max-h-40 rounded-lg overflow-hidden border border-black/20 bg-black/10">
+                      <div className="w-full max-h-24 sm:max-h-32 md:max-h-40 rounded-lg overflow-hidden border border-black/20 bg-black/10">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={option.mediaUrl}
                           alt=""
-                          className="w-full h-full max-h-40 object-contain"
+                          className="w-full h-full object-contain"
                         />
                       </div>
                     ) : null}
@@ -716,28 +816,33 @@ export default function PlayerGameScreen() {
 
         <div className="pt-1">
           {!submitted ? (
-            <Button
-              onClick={() => {
-                if (isShortAnswer) {
-                  handleSubmitAnswer(shortAnswerText)
-                } else if (isPinAnswer) {
-                  if (!pinPosition) return
-                  handleSubmitAnswer(`${pinPosition.x.toFixed(1)},${pinPosition.y.toFixed(1)}`)
-                } else {
-                  handleSubmitAnswer(selectedAnswer)
-                }
-              }}
-              disabled={!canSubmit}
-              size="lg"
-              className="w-full h-12 bg-[#f2f0eb] text-[#12141a] hover:bg-white font-semibold rounded-xl disabled:opacity-30"
-            >
-              {isPoll ? 'Vote' : 'Submit'}
-              <ArrowRight className="w-4 h-4 ml-1" />
-            </Button>
+            <div className="sticky bottom-0 z-30 -mx-3 sm:mx-0 px-3 sm:px-0 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-[#12141a]/90 backdrop-blur-md sm:bg-transparent sm:backdrop-blur-none space-y-2">
+              {submitError && (
+                <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-300 text-center">{submitError}</div>
+              )}
+              <Button
+                onClick={() => {
+                  if (isShortAnswer) {
+                    handleSubmitAnswer(shortAnswerText)
+                  } else if (isPinAnswer) {
+                    if (!pinPosition) return
+                    handleSubmitAnswer(`${pinPosition.x.toFixed(1)},${pinPosition.y.toFixed(1)}`)
+                  } else {
+                    handleSubmitAnswer(selectedAnswer)
+                  }
+                }}
+                disabled={!canSubmit}
+                size="lg"
+                className="w-full h-12 bg-[#f2f0eb] text-[#12141a] hover:bg-white font-semibold rounded-xl disabled:opacity-100 disabled:bg-[#2c313d] disabled:text-[#5c6170]"
+              >
+                {isPoll ? 'Vote' : 'Submit'}
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
           ) : feedback ? (
             feedback.isPoll ? (
               pollResults ? (
-                <div className="rounded-2xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-6 space-y-3">
+                <div className="sticky bottom-0 z-30 rounded-2xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-4 sm:p-6 space-y-3">
                   <p className="text-sm font-semibold text-[#f2f0eb] text-center">Results</p>
                   {pollResults
                     .slice()
@@ -745,8 +850,8 @@ export default function PlayerGameScreen() {
                     .map((r) => (
                       <div key={r.optionId} className="space-y-1">
                         <div className="flex items-center justify-between text-sm text-[#f2f0eb]">
-                          <span className="truncate pr-2">{r.text}</span>
-                          <span className="font-semibold tabular-nums">{r.percentage}%</span>
+                          <span className="min-w-0 flex-1 [overflow-wrap:anywhere] pr-2">{r.text}</span>
+                          <span className="font-semibold tabular-nums shrink-0">{r.percentage}%</span>
                         </div>
                         <div className="h-2.5 rounded-full bg-[#12141a]/40 overflow-hidden">
                           <div
@@ -758,8 +863,8 @@ export default function PlayerGameScreen() {
                     ))}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-8 text-center space-y-3">
-                  <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#12141a]/40">
+                <div className="sticky bottom-0 z-30 rounded-2xl border border-[#2dd4bf]/35 bg-[#2dd4bf]/10 p-5 sm:p-8 text-center space-y-3">
+                  <div className="inline-flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#12141a]/40">
                     <Check className="w-7 h-7 text-[#2dd4bf]" />
                   </div>
                   <div>
@@ -770,13 +875,13 @@ export default function PlayerGameScreen() {
               )
             ) : (
               <div
-                className={`rounded-2xl border p-8 text-center space-y-3 ${
+                className={`sticky bottom-0 z-30 rounded-2xl border p-5 sm:p-8 text-center space-y-3 ${
                   feedback.isCorrect
                     ? 'border-[#2dd4bf]/35 bg-[#2dd4bf]/10'
                     : 'border-[#e85d4c]/35 bg-[#e85d4c]/10'
                 }`}
               >
-                <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-[#12141a]/40">
+                <div className="inline-flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#12141a]/40">
                   {feedback.isCorrect ? (
                     <Check className="w-7 h-7 text-[#2dd4bf]" />
                   ) : (
@@ -799,8 +904,23 @@ export default function PlayerGameScreen() {
               </div>
             )
           ) : (
-            <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 text-center text-sm text-[#9a9eab]">
+            <div className="sticky bottom-0 z-30 rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-4 sm:p-6 text-center text-sm text-[#9a9eab]">
               Answer locked in
+            </div>
+          )}
+          {submitted && roundLeaderboard.length > 0 && (
+            <div className="mt-3 rounded-2xl border border-[#2c313d] bg-[#1a1d26] p-4 sm:p-5 space-y-2">
+              <p className="text-xs uppercase tracking-wider text-[#9a9eab] font-semibold">Top 5</p>
+              {roundLeaderboard.map((p, i) => {
+                const isMe = !!myNickname && p.nickname === myNickname
+                return (
+                  <div key={p.id || i} className={`flex items-center gap-3 text-sm ${isMe ? 'rounded-lg bg-[#2dd4bf]/10 -mx-2 px-2 py-1' : ''}`}>
+                    <span className="w-6 shrink-0 text-right tabular-nums text-[#9a9eab]">{i + 1}</span>
+                    <span className={`min-w-0 flex-1 truncate ${isMe ? 'font-semibold text-[#2dd4bf]' : 'text-[#f2f0eb]'}`}>{p.nickname}</span>
+                    <span className="shrink-0 tabular-nums font-bold text-[#2dd4bf]">{p.score}</span>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

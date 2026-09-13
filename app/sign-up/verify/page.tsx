@@ -23,6 +23,7 @@ function VerifyOTPContent() {
 
   useEffect(() => {
     if (emailParam) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync email from URL param before paint, intentional
       setEmail(emailParam)
     }
   }, [emailParam])
@@ -47,8 +48,8 @@ function VerifyOTPContent() {
   if (verified) {
     return (
       <GameBackground variant="auth">
-        <div className="flex-1 flex items-center justify-center px-4">
-          <Card className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden text-center">
+        <div className="flex-1 flex items-start sm:items-center justify-center px-4 py-8">
+          <Card className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden text-center">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-green-500/40 via-emerald-500/40 to-teal-500/40"></div>
 
             <div className="mb-6">
@@ -56,7 +57,7 @@ function VerifyOTPContent() {
               <h1 className="text-2xl font-black text-white mt-4">Verification Successful!</h1>
               <p className="text-sm text-gray-400 mt-2">
                 Your account has been created. A temporary password was sent to{' '}
-                <span className="text-white font-medium">{email}</span>. Check your inbox, then sign in and change your password.
+                <span className="text-white font-medium break-all">{email}</span>. Check your inbox, then sign in and change your password.
               </p>
             </div>
 
@@ -77,8 +78,8 @@ function VerifyOTPContent() {
 
   return (
     <GameBackground variant="auth">
-      <div className="flex-1 flex items-center justify-center px-4">
-        <Card className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+      <div className="flex-1 flex items-start sm:items-center justify-center px-4 py-8">
+        <Card className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-purple-500/40 via-indigo-500/40 to-blue-500/40"></div>
           
           <div className="mb-8 text-center">
@@ -91,7 +92,7 @@ function VerifyOTPContent() {
               Verify Your Email
             </h1>
             <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-              We have sent a 6-digit verification code to {email || 'your email'}.
+              We have sent a 6-digit verification code to <span className="break-all">{email || 'your email'}</span>.
             </p>
           </div>
 
@@ -114,6 +115,9 @@ function VerifyOTPContent() {
               <Input
                 id="otp"
                 type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]*"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
                 required
@@ -124,7 +128,7 @@ function VerifyOTPContent() {
             </div>
 
             {error && (
-              <div className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-300 text-xs font-semibold leading-relaxed" role="alert">
+              <div className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-300 text-sm font-semibold leading-relaxed" role="alert">
                 ⚠️ {error}
               </div>
             )}
@@ -149,7 +153,7 @@ function VerifyOTPContent() {
             Back to{' '}
             <Link
               href="/sign-up"
-              className="text-indigo-400 font-extrabold hover:text-indigo-300 transition-colors underline-offset-4 hover:underline"
+              className="text-indigo-400 font-extrabold hover:text-indigo-300 transition-colors underline-offset-4 hover:underline inline-block px-2 py-2"
             >
               Sign Up
             </Link>

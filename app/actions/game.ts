@@ -80,6 +80,8 @@ export async function getQuestionByIndex(sessionId: string, questionIndex: numbe
       type: data.type,
       index: typeof data.index === 'number' ? data.index : questionIndex,
       total: typeof data.total === 'number' ? data.total : undefined,
+      // Server-side deadline — lets a reloading client resync its countdown
+      activeUntil: typeof data.active_until === 'string' ? data.active_until : undefined,
     }
   }
 
@@ -109,6 +111,32 @@ export async function getQuestionByIndex(sessionId: string, questionIndex: numbe
     type: question.type,
     correctAnswer: question.correct_answer,
   }
+}
+
+// Get all questions of a session's quiz (host view). Answer keys are stripped so the
+// projected host screen never leaks correct answers in solo (player-paced) mode.
+export async function getAllQuestionsForDisplay(sessionId: string) {
+  const data = await apiRequest(`/rooms/${sessionId}`)
+  const room = data?.room
+  const quiz = room?.Quiz || room?.quiz
+  const rawQuestions = quiz?.Questions || quiz?.questions || []
+  const questions = [...rawQuestions].sort((a: any, b: any) => (a.order - b.order) || (a.id - b.id))
+
+  return questions.map((question: any) => {
+    let parsedOptions = []
+    try {
+      parsedOptions = question.options ? JSON.parse(question.options) : []
+    } catch {}
+    return {
+      id: String(question.id),
+      quizId: String(question.quiz_id),
+      questionText: question.content,
+      timeLimit: question.duration,
+      displayOrder: question.order,
+      options: parsedOptsToDrizzle(parsedOptions, '', true),
+      type: question.type,
+    }
+  })
 }
 
 function parsedOptsToDrizzle(parsedOpts: any[], correctAnswer: string, stripCorrectness = false) {

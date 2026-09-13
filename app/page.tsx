@@ -16,45 +16,45 @@ export default async function HomePage() {
 
   return (
     <GameBackground variant="marketing" showGrid>
-      <div className="mx-auto w-full max-w-6xl px-5 sm:px-8 pt-5 pb-16">
-        <header className="flex h-14 items-center justify-between">
+      <div className="mx-auto w-full max-w-6xl px-5 sm:px-8 pt-5 pb-[calc(4rem+env(safe-area-inset-bottom))]">
+        <header className="flex h-14 items-center justify-between gap-2 flex-wrap">
           <BrandMark />
           <nav className="flex items-center gap-2">
             <Link href="/sign-in">
-              <Button variant="ghost" className="text-[#c5c2ba] hover:text-[#f2f0eb] hover:bg-white/5">
+              <Button variant="ghost" className="text-[#c5c2ba] hover:text-[#f2f0eb] hover:bg-white/5 h-10 sm:h-9 px-3">
                 Sign in
               </Button>
             </Link>
             <Link href="/sign-up">
-              <Button className="bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] h-9 px-4 font-semibold">
+              <Button className="bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] h-11 sm:h-9 px-4 font-semibold">
                 Host free
               </Button>
             </Link>
           </nav>
         </header>
 
-        <section className="mt-10 md:mt-16 grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center min-h-[min(70dvh,640px)]">
+        <section className="mt-10 md:mt-16 grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-12 lg:gap-16 items-center lg:min-h-[min(70dvh,640px)]">
           <div className="lg:col-span-7 space-y-6">
-            <h1 className="text-4xl sm:text-5xl lg:text-[3.5rem] font-semibold tracking-tight leading-[1.08] text-[#f2f0eb] max-w-[14ch]">
+            <h1 className="text-3xl sm:text-5xl lg:text-[3.5rem] font-semibold tracking-tight leading-[1.08] text-[#f2f0eb] sm:max-w-[14ch]">
               Live quizzes that feel like a room, not a slide deck.
             </h1>
             <p className="text-base sm:text-lg text-[#9a9eab] leading-relaxed max-w-[42ch]">
               Drop a PIN, open a QR, and run the round. Scores update as answers land.
             </p>
-            <div className="flex flex-wrap gap-3 pt-1">
-              <Link href="/sign-up">
+            <div className="flex flex-col sm:flex-row gap-3 pt-1">
+              <Link href="/sign-up" className="w-full sm:w-auto">
                 <Button
                   size="lg"
-                  className="h-12 px-6 bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] font-semibold rounded-xl active:scale-[0.98]"
+                  className="w-full sm:w-auto h-12 px-6 bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] font-semibold rounded-xl active:scale-[0.98]"
                 >
                   Start hosting
                 </Button>
               </Link>
-              <Link href="/join">
+              <Link href="/join" className="w-full sm:w-auto">
                 <Button
                   size="lg"
                   variant="outline"
-                  className="h-12 px-6 border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-white/5 rounded-xl"
+                  className="w-full sm:w-auto h-12 px-6 border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-white/5 rounded-xl"
                 >
                   Join with PIN
                 </Button>
@@ -68,10 +68,10 @@ export default async function HomePage() {
         </section>
 
         <section className="mt-20 md:mt-28 border-t border-[#2c313d] pt-14">
-          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-[#f2f0eb] max-w-[20ch]">
+          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-[#f2f0eb] sm:max-w-[20ch] text-balance">
             Built for the few minutes between “phones up” and “next question.”
           </h2>
-          <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-10">
+          <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 md:gap-10">
             {[
               {
                 title: 'PIN or QR',
