@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +13,7 @@ import {
 } from '@/app/actions/admin-users'
 import { adminAssignPlan } from '@/app/actions/license'
 import { RefreshCw, Search, Shield, BadgePercent } from 'lucide-react'
+import { isPaidPlan } from '@/lib/license'
 import { useToast } from '@/components/ui/toast'
 import { useRouter } from 'next/navigation'
 
@@ -24,6 +26,7 @@ function accountLabel(u: Pick<AdminUserRow, 'role' | 'account_type'>) {
 }
 
 export default function AdminUsersPage() {
+  const t = useTranslations('adminUsers')
   const toast = useToast()
   const router = useRouter()
   const [users, setUsers] = useState<AdminUserRow[]>([])
@@ -46,7 +49,8 @@ export default function AdminUsersPage() {
   }, [search, router])
 
   useEffect(() => {
-    load()
+    const t = setTimeout(load, 0)
+    return () => clearTimeout(t)
   }, [load])
 
   const grantPro = async (user: AdminUserRow) => {
@@ -55,11 +59,11 @@ export default function AdminUsersPage() {
       const dur = durationByUser[user.id] || '30'
       if (dur === 'lifetime') {
         await adminAssignPlan({ userId: user.id, planId: 'pro', lifetime: true })
-        toast.success('Đã cấp Pro', `${user.email} · vĩnh viễn`)
+        toast.success(t('grantedPro'), `${user.email} · ${t('lifetime')}`)
       } else {
         const days = parseInt(dur, 10)
         await adminAssignPlan({ userId: user.id, planId: 'pro', endsAtDays: days })
-        toast.success('Đã cấp Pro', `${user.email} · ${days} ngày`)
+        toast.success(t('grantedPro'), `${user.email} · ${t('days', { n: days })}`)
       }
       await load()
     } catch (e: unknown) {
@@ -71,16 +75,14 @@ export default function AdminUsersPage() {
 
   const revokeToFree = async (user: AdminUserRow) => {
     if (
-      !window.confirm(
-        `Ngắt license Pro của ${user.email}?\nUser sẽ về gói Free ngay lập tức.`
-      )
+      !window.confirm(t('confirmRevokePro', { email: user.email }))
     ) {
       return
     }
     setBusyId(user.id)
     try {
       await adminAssignPlan({ userId: user.id, planId: 'free' })
-      toast.success('Đã ngắt Pro → Free', user.email)
+      toast.success(t('revokedPro'), user.email)
       await load()
     } catch (e: unknown) {
       toast.apiError(e, (href) => router.push(href))
@@ -94,7 +96,7 @@ export default function AdminUsersPage() {
     setBusyId(user.id)
     try {
       await adminUpdateUserRole(user.id, 'admin')
-      toast.success('Đã cấp quyền Admin hệ thống', user.email)
+      toast.success(t('grantedAdmin'), user.email)
       await load()
     } catch (e: unknown) {
       toast.apiError(e, (href) => router.push(href))
@@ -109,7 +111,7 @@ export default function AdminUsersPage() {
     try {
       // Product "User" maps to RBAC role "host"
       await adminUpdateUserRole(user.id, 'user')
-      toast.success('Đã gỡ Admin → User', user.email)
+      toast.success(t('revokedAdmin'), user.email)
       await load()
     } catch (e: unknown) {
       toast.apiError(e, (href) => router.push(href))
@@ -121,14 +123,16 @@ export default function AdminUsersPage() {
   const toggleStatus = async (user: AdminUserRow) => {
     if (user.is_seed_admin && user.is_active) return
     const next = !user.is_active
-    const action = next ? 'kích hoạt' : 'vô hiệu hóa'
-    if (!window.confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} tài khoản ${user.email}?`)) {
+    const confirmMessage = next
+      ? t('confirmActivate', { email: user.email })
+      : t('confirmDeactivate', { email: user.email })
+    if (!window.confirm(confirmMessage)) {
       return
     }
     setBusyId(user.id)
     try {
       await adminUpdateUserStatus(user.id, next)
-      toast.success(`Đã ${action}`, user.email)
+      toast.success(next ? t('activated') : t('deactivated'), user.email)
       await load()
     } catch (e: unknown) {
       toast.apiError(e, (href) => router.push(href))
@@ -138,17 +142,14 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <main className="container mx-auto px-6 py-10 max-w-6xl space-y-8">
+    <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-10 max-w-6xl space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-3xl font-black text-[#f2f0eb] tracking-tight">Quản lý Users</h1>
+        <h1 className="text-2xl sm:text-3xl font-black text-[#f2f0eb] tracking-tight">{t('title')}</h1>
         <p className="text-sm text-[#9a9eab] mt-2 max-w-2xl leading-relaxed">
-          Ai đăng ký đều là <strong className="text-[#c5c2ba] font-semibold">User</strong> (có thể tạo quiz /
-          mở phòng / chơi). Player vào bằng PIN không cần tài khoản. Việc admin quản lý là{' '}
-          <strong className="text-[#c5c2ba] font-semibold">gói license</strong> (Free/Pro) và tuỳ chọn cấp{' '}
-          <strong className="text-[#c5c2ba] font-semibold">Admin hệ thống</strong>.
+          {t.rich('intro', { b: (c) => <strong className="text-[#c5c2ba] font-semibold">{c}</strong> })}
         </p>
         <p className="mt-2 text-xs text-[#5c6170]">
-          Chi tiết catalog gói xem{' '}
+          {t('catalogHint')}{' '}
           <Link href="/admin/license" className="text-[#e85d4c] hover:underline">
             License
           </Link>
@@ -162,7 +163,7 @@ export default function AdminUsersPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm email hoặc nickname…"
+            placeholder={t('searchPlaceholder')}
             className="pl-10 h-11 bg-[#1a1d26] border-[#2c313d] text-[#f2f0eb] rounded-xl"
           />
         </div>
@@ -172,40 +173,40 @@ export default function AdminUsersPage() {
           className="border-[#2c313d] text-[#9a9eab] hover:text-[#f2f0eb] h-11 rounded-xl"
         >
           <RefreshCw className="w-4 h-4 mr-1.5" />
-          Refresh
+          {t('refresh')}
         </Button>
       </div>
 
       <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/80 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[880px] text-sm">
             <thead>
               <tr className="border-b border-[#2c313d] text-left text-[11px] uppercase tracking-wider text-[#9a9eab]">
                 <th className="px-4 py-3 font-semibold">ID</th>
-                <th className="px-4 py-3 font-semibold">Tài khoản</th>
-                <th className="px-4 py-3 font-semibold">Loại</th>
+                <th className="px-4 py-3 font-semibold">{t('account')}</th>
+                <th className="px-4 py-3 font-semibold">{t('type')}</th>
                 <th className="px-4 py-3 font-semibold">License</th>
-                <th className="px-4 py-3 font-semibold">Trạng thái</th>
-                <th className="px-4 py-3 font-semibold text-right">License & Admin</th>
+                <th className="px-4 py-3 font-semibold">{t('status')}</th>
+                <th className="px-4 py-3 font-semibold text-right">{t('licenseAdmin')}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-[#9a9eab]">
-                    Loading users…
+                    {t('loading')}
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-10 text-center text-[#9a9eab]">
-                    No users found.
+                    {t('noUsers')}
                   </td>
                 </tr>
               ) : (
                 users.map((u) => {
                   const isAdmin = u.account_type === 'admin' || u.role === 'admin'
-                  const isPro = (u.plan_id || '').toLowerCase() === 'pro'
+                  const isPro = isPaidPlan(u.plan_id)
                   return (
                     <tr key={u.id} className="border-b border-[#2c313d]/80 hover:bg-white/[0.02]">
                       <td className="px-4 py-3 text-[#9a9eab] tabular-nums">#{u.id}</td>
@@ -250,7 +251,7 @@ export default function AdminUsersPage() {
                               : 'bg-rose-500/15 text-rose-400 border border-rose-500/25'
                           }`}
                         >
-                          {u.is_active ? 'Active' : 'Inactive'}
+                          {u.is_active ? t('active') : t('inactive')}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -264,30 +265,30 @@ export default function AdminUsersPage() {
                                   [u.id]: e.target.value as DurationKey,
                                 }))
                               }
-                              className="h-8 text-[11px] rounded-lg bg-[#12141a] border border-[#2c313d] text-[#c5c2ba] px-2"
+                              className="h-10 sm:h-8 text-xs sm:text-[11px] rounded-lg bg-[#12141a] border border-[#2c313d] text-[#c5c2ba] px-2"
                             >
-                              <option value="30">Pro 30d</option>
-                              <option value="90">Pro 90d</option>
-                              <option value="365">Pro 1y</option>
-                              <option value="lifetime">Pro lifetime</option>
+                              <option value="30">{t('pro30')}</option>
+                              <option value="90">{t('pro90')}</option>
+                              <option value="365">{t('pro1y')}</option>
+                              <option value="lifetime">{t('proLifetime')}</option>
                             </select>
                             <Button
                               size="sm"
                               disabled={busyId === u.id}
                               onClick={() => grantPro(u)}
-                              className="h-8 text-xs rounded-lg bg-[#2dd4bf]/90 hover:bg-[#2dd4bf] text-[#0c1412] border-none font-bold"
+                              className="h-10 sm:h-8 text-xs rounded-lg bg-[#2dd4bf]/90 hover:bg-[#2dd4bf] text-[#0c1412] border-none font-bold"
                             >
-                              Cấp Pro
+                              {t('grantPro')}
                             </Button>
                             <Button
                               size="sm"
                               disabled={busyId === u.id || !isPro}
                               onClick={() => revokeToFree(u)}
                               variant="outline"
-                              title={isPro ? 'Ngắt Pro, về Free ngay' : 'User đang Free'}
-                              className="h-8 text-xs rounded-lg border-rose-500/40 text-rose-300 hover:bg-rose-500/10 disabled:opacity-40"
+                              title={isPro ? t('revokeProTitle') : t('userFree')}
+                              className="h-10 sm:h-8 text-xs rounded-lg border-rose-500/40 text-rose-300 hover:bg-rose-500/10 disabled:opacity-40"
                             >
-                              Ngắt Pro
+                              {t('revokePro')}
                             </Button>
                           </div>
                           <div className="flex justify-end gap-2">
@@ -297,9 +298,9 @@ export default function AdminUsersPage() {
                                 disabled={busyId === u.id}
                                 onClick={() => makeAdmin(u)}
                                 variant="outline"
-                                className="h-8 text-xs rounded-lg border-[#e85d4c]/40 text-[#e85d4c] hover:bg-[#e85d4c]/10"
+                                className="h-10 sm:h-8 text-xs rounded-lg border-[#e85d4c]/40 text-[#e85d4c] hover:bg-[#e85d4c]/10"
                               >
-                                Cấp Admin hệ thống
+                                {t('grantAdmin')}
                               </Button>
                             ) : (
                               <Button
@@ -307,14 +308,14 @@ export default function AdminUsersPage() {
                                 disabled={busyId === u.id || u.is_seed_admin}
                                 onClick={() => revokeAdmin(u)}
                                 variant="outline"
-                                className="h-8 text-xs rounded-lg border-[#2c313d] text-[#9a9eab] disabled:opacity-40"
+                                className="h-10 sm:h-8 text-xs rounded-lg border-[#2c313d] text-[#9a9eab] disabled:opacity-40"
                                 title={
                                   u.is_seed_admin
-                                    ? 'Không thể gỡ admin seed'
-                                    : 'Gỡ quyền admin hệ thống'
+                                    ? t('cannotRevokeSeed')
+                                    : t('revokeAdminTitle')
                                 }
                               >
-                                Gỡ Admin
+                                {t('revokeAdmin')}
                               </Button>
                             )}
                           </div>
@@ -331,13 +332,13 @@ export default function AdminUsersPage() {
                               } disabled:opacity-40`}
                               title={
                                 u.is_seed_admin && u.is_active
-                                  ? 'Không thể vô hiệu hóa admin seed'
+                                  ? t('cannotDeactivateSeed')
                                   : u.is_active
-                                    ? 'Vô hiệu hóa tài khoản'
-                                    : 'Kích hoạt tài khoản'
+                                    ? t('deactivateAccount')
+                                    : t('activateAccount')
                               }
                             >
-                              {u.is_active ? 'Deactivate' : 'Activate'}
+                              {u.is_active ? t('deactivate') : t('activate')}
                             </Button>
                           </div>
                         </div>

@@ -4,16 +4,32 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+# Pinned: an unpinned `pnpm` silently follows the latest major, so a build that
+# worked yesterday can fail today on an installer change alone.
+RUN npm install -g pnpm@10
+
+# pnpm 10 aborts when a dependency's build script is skipped. This project has
+# always installed with those scripts skipped (@parcel/watcher, @swc/core are
+# dev-only native builds the production image does not use), so keep that
+# behaviour rather than change what gets built.
+ENV PNPM_CONFIG_STRICT_DEP_BUILDS=false
 
 # Copy package lock and configurations
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 RUN pnpm install --no-frozen-lockfile
 
 # Stage 2: Build the application
 FROM node:20-alpine AS builder
 WORKDIR /app
-RUN npm install -g pnpm
+# Pinned: an unpinned `pnpm` silently follows the latest major, so a build that
+# worked yesterday can fail today on an installer change alone.
+RUN npm install -g pnpm@10
+
+# pnpm 10 aborts when a dependency's build script is skipped. This project has
+# always installed with those scripts skipped (@parcel/watcher, @swc/core are
+# dev-only native builds the production image does not use), so keep that
+# behaviour rather than change what gets built.
+ENV PNPM_CONFIG_STRICT_DEP_BUILDS=false
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

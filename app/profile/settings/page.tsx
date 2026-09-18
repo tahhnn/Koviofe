@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormatter, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { authClient } from '@/lib/auth-client'
@@ -15,6 +16,8 @@ import {
   type LicenseSnapshot,
   type PricingPlan,
 } from '@/app/actions/license'
+import { LicenseRedeem } from '@/components/license-redeem'
+import { isLicenseExpiringSoon, isLicenseLocked } from '@/lib/license'
 
 function formatLimit(n: number) {
   return n < 0 ? 'Unlimited' : String(n)
@@ -42,6 +45,10 @@ function UsageBar({ label, used, max }: { label: string; used: number; max: numb
 }
 
 export default function ProfileSettingsPage() {
+  const t = useTranslations('settings')
+  const format = useFormatter()
+  const tLicense = useTranslations('license')
+  const tCommon = useTranslations('common')
   const router = useRouter()
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -73,7 +80,7 @@ export default function ProfileSettingsPage() {
     setSuccess(null)
 
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match')
+      setError(t('passwordMismatch'))
       return
     }
 
@@ -97,41 +104,76 @@ export default function ProfileSettingsPage() {
 
   return (
     <GameBackground variant="auth">
-      <div className="flex-1 flex items-center justify-center px-4 py-8">
+      <div className="flex-1 flex items-start justify-center px-4 py-6 sm:py-8">
         <div className="w-full max-w-3xl space-y-6">
-          <Card className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+          <Card className="bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-[#e85d4c]/50" />
             <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <h1 className="text-2xl font-black text-[#f2f0eb]">Gói đăng ký</h1>
+                <h1 className="text-2xl font-black text-[#f2f0eb]">{t('planSection')}</h1>
                 <p className="text-sm text-[#9a9eab] mt-1">
-                  Xem giới hạn và quyền lợi hiện tại. Nâng cấp do admin cấp phép.
+                  {t('planSubtitle')}
                 </p>
               </div>
               {ents && (
                 <div className="px-4 py-2 rounded-2xl bg-black/40 border border-white/10 text-center">
-                  <div className="text-[10px] uppercase tracking-widest text-[#9a9eab]">Current plan</div>
+                  <div className="text-[10px] uppercase tracking-widest text-[#9a9eab]">{t('currentPlan')}</div>
                   <div className="text-lg font-black text-[#e85d4c]">{ents.plan_name}</div>
                   <div className="text-xs text-[#9a9eab] mt-0.5">
-                    Max {ents.max_players_per_room} players / room
+                    {t('maxPlayersPerRoom', { n: ents.max_players_per_room })}
+                  </div>
+                  <div
+                    className={`text-xs mt-0.5 ${
+                      isLicenseExpiringSoon(license) ? 'text-amber-400' : 'text-[#9a9eab]'
+                    }`}
+                  >
+                    {license?.days_remaining === null || license?.days_remaining === undefined
+                      ? t('planLifetime')
+                      : isLicenseExpiringSoon(license)
+                        ? t('planExpiresSoon', { days: license.days_remaining })
+                        : t('planExpires', { days: license.days_remaining })}
                   </div>
                 </div>
               )}
             </div>
 
-            {planLoading && <p className="text-sm text-[#9a9eab]">Đang tải gói…</p>}
+            {planLoading && <p className="text-sm text-[#9a9eab]">{t('planLoading')}</p>}
+
+            {!planLoading && (
+              <div
+                className={`rounded-2xl border p-4 mb-6 space-y-3 ${
+                  isLicenseLocked(license)
+                    ? 'border-[#e85d4c]/40 bg-[#e85d4c]/10'
+                    : 'border-white/10 bg-black/30'
+                }`}
+              >
+                <div>
+                  <h2 className="text-sm font-semibold text-[#f2f0eb]">{tLicense('codeLabel')}</h2>
+                  <p className="text-xs text-[#9a9eab] mt-0.5">
+                    {isLicenseLocked(license)
+                      ? t('lockedRedeemHint')
+                      : t('redeemHint')}
+                  </p>
+                </div>
+                <LicenseRedeem
+                  onRedeemed={async () => {
+                    setLicense(await getMyLicense())
+                  }}
+                />
+              </div>
+            )}
 
             {!planLoading && ents && usage && (
               <div className="space-y-4 mb-8">
-                <UsageBar label="Quizzes" used={usage.quizzes} max={ents.max_quizzes} />
+                <UsageBar label={t('quizzes')} used={usage.quizzes} max={ents.max_quizzes} />
                 <UsageBar
-                  label="Phòng đang mở (waiting/active)"
+                  label={t('openRooms')}
                   used={usage.concurrent_rooms}
                   max={ents.max_concurrent_rooms}
                 />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs text-[#c5c2ba]">
                   <div className="rounded-xl bg-black/30 border border-white/5 p-3">
-                    Câu hỏi / quiz: <strong className="text-[#f2f0eb]">{ents.max_questions_per_quiz}</strong>
+                    {t('questionsPerQuiz')} <strong className="text-[#f2f0eb]">{ents.max_questions_per_quiz}</strong>
                   </div>
                   <div className="rounded-xl bg-black/30 border border-white/5 p-3">
                     Player-paced:{' '}
@@ -140,15 +182,15 @@ export default function ProfileSettingsPage() {
                     </strong>
                   </div>
                   <div className="rounded-xl bg-black/30 border border-white/5 p-3">
-                    Export logs:{' '}
+                    {t('exportLogs')}:{' '}
                     <strong className={ents.allow_export_logs ? 'text-emerald-400' : 'text-rose-400'}>
-                      {ents.allow_export_logs ? 'Có' : 'Pro only'}
+                      {ents.allow_export_logs ? t('yes') : t('proOnly')}
                     </strong>
                   </div>
                   <div className="rounded-xl bg-black/30 border border-white/5 p-3">
-                    Bỏ watermark:{' '}
+                    {t('removeWatermark')}:{' '}
                     <strong className={ents.allow_remove_watermark ? 'text-emerald-400' : 'text-rose-400'}>
-                      {ents.allow_remove_watermark ? 'Có' : 'Pro only'}
+                      {ents.allow_remove_watermark ? t('yes') : t('proOnly')}
                     </strong>
                   </div>
                 </div>
@@ -168,29 +210,35 @@ export default function ProfileSettingsPage() {
                         : 'border-white/10 bg-black/30'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                       <h3 className="text-lg font-black text-[#f2f0eb]">{p.name}</h3>
-                      <span className="text-sm font-bold text-[#c5c2ba]">
+                      <span className="text-sm font-bold text-[#c5c2ba] whitespace-nowrap">
                         {p.price_monthly_vnd === 0
-                          ? 'Miễn phí'
-                          : `${p.price_monthly_vnd.toLocaleString('vi-VN')}₫/tháng`}
+                          ? t('free')
+                          : t('pricePerMonth', { price: format.number(p.price_monthly_vnd) })}
                       </span>
                     </div>
                     <p className="text-xs text-[#9a9eab] leading-relaxed">{p.description}</p>
                     <ul className="text-xs text-[#c5c2ba] space-y-1.5">
-                      <li>• {formatLimit(p.max_players_per_room)} người / phòng</li>
-                      <li>• {formatLimit(p.max_quizzes)} quiz · tối đa {formatLimit(p.max_questions_per_quiz)} câu/quiz</li>
-                      <li>• {formatLimit(p.max_concurrent_rooms)} phòng đồng thời</li>
-                      {isPro && <li className="text-[#e85d4c]">• Solo / player-paced + export logs</li>}
+                      <li>• {t('playersPerRoom', { count: formatLimit(p.max_players_per_room) })}</li>
+                      <li>
+                        •{' '}
+                        {t('quizzesAndQuestions', {
+                          quizzes: formatLimit(p.max_quizzes),
+                          questions: formatLimit(p.max_questions_per_quiz),
+                        })}
+                      </li>
+                      <li>• {t('concurrentRooms', { count: formatLimit(p.max_concurrent_rooms) })}</li>
+                      {isPro && <li className="text-[#e85d4c]">• {t('proExtras')}</li>}
                     </ul>
                     <div
-                      className={`w-full h-11 rounded-xl flex items-center justify-center text-sm font-bold ${
+                      className={`w-full min-h-11 h-auto py-2.5 leading-snug text-center rounded-xl flex items-center justify-center text-sm font-bold ${
                         isCurrent
                           ? 'bg-[#e85d4c]/20 text-[#e85d4c]'
                           : 'bg-white/5 text-[#9a9eab]'
                       }`}
                     >
-                      {isCurrent ? 'Đang dùng' : 'Liên hệ admin để nâng cấp'}
+                      {isCurrent ? t('inUse') : t('contactAdmin')}
                     </div>
                   </div>
                 )
@@ -198,7 +246,7 @@ export default function ProfileSettingsPage() {
             </div>
 
             <p className="mt-4 text-[11px] text-center text-[#9a9eab]">
-              User không thể tự đổi gói — license do admin quản lý tại{' '}
+              {t('adminManagedNote')}{' '}
               {isAdmin ? (
                 <Link href="/admin" className="text-[#e85d4c] underline underline-offset-2">
                   /admin
@@ -210,17 +258,17 @@ export default function ProfileSettingsPage() {
             </p>
           </Card>
 
-          <Card className="bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+          <Card className="bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-[#e85d4c]/40" />
             <div className="mb-8 text-center">
-              <h2 className="text-2xl font-black text-[#f2f0eb]">Security Settings</h2>
-              <p className="text-sm text-[#9a9eab] mt-2">Update your account password</p>
+              <h2 className="text-2xl font-black text-[#f2f0eb]">{t('securityTitle')}</h2>
+              <p className="text-sm text-[#9a9eab] mt-2">{t('securitySubtitle')}</p>
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="old-password" className="text-xs font-bold uppercase tracking-wider text-[#9a9eab]">
-                  Current Password
+                  {t('currentPassword')}
                 </Label>
                 <Input
                   id="old-password"
@@ -233,7 +281,7 @@ export default function ProfileSettingsPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="new-password" className="text-xs font-bold uppercase tracking-wider text-[#9a9eab]">
-                  New Password
+                  {t('newPassword')}
                 </Label>
                 <Input
                   id="new-password"
@@ -247,7 +295,7 @@ export default function ProfileSettingsPage() {
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="confirm-password" className="text-xs font-bold uppercase tracking-wider text-[#9a9eab]">
-                  Confirm New Password
+                  {t('confirmPassword')}
                 </Label>
                 <Input
                   id="confirm-password"
@@ -261,12 +309,12 @@ export default function ProfileSettingsPage() {
               </div>
 
               {error && (
-                <div className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-300 text-xs font-semibold">
+                <div className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-300 text-xs font-semibold break-words">
                   {error}
                 </div>
               )}
               {success && (
-                <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-emerald-300 text-xs font-semibold">
+                <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/10 text-emerald-300 text-xs font-semibold break-words">
                   {success}
                 </div>
               )}
@@ -277,14 +325,14 @@ export default function ProfileSettingsPage() {
                   onClick={() => router.push('/dashboard')}
                   className="flex-1 h-12 bg-white/5 hover:bg-white/10 text-[#f2f0eb] font-bold rounded-xl border border-white/10 cursor-pointer"
                 >
-                  Back
+                  {tCommon('back')}
                 </Button>
                 <Button
                   type="submit"
                   disabled={loading}
                   className="flex-[2] h-12 bg-[#e85d4c] hover:bg-[#d14e3e] text-white font-extrabold rounded-xl border-none cursor-pointer"
                 >
-                  {loading ? 'Updating...' : 'Change Password'}
+                  {loading ? t('updating') : t('changePassword')}
                 </Button>
               </div>
             </form>

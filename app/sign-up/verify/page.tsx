@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
+import { useTranslations } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authClient } from '@/lib/auth-client'
@@ -11,6 +12,7 @@ import { Card } from '@/components/ui/card'
 import { GameBackground } from '@/components/game-background'
 
 function VerifyOTPContent() {
+  const t = useTranslations('verify')
   const router = useRouter()
   const searchParams = useSearchParams()
   const emailParam = searchParams.get('email') || ''
@@ -23,6 +25,7 @@ function VerifyOTPContent() {
 
   useEffect(() => {
     if (emailParam) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync email from URL param before paint, intentional
       setEmail(emailParam)
     }
   }, [emailParam])
@@ -47,16 +50,16 @@ function VerifyOTPContent() {
   if (verified) {
     return (
       <GameBackground variant="auth">
-        <div className="flex-1 flex items-center justify-center px-4">
-          <Card className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden text-center">
+        <div className="flex-1 flex items-start sm:items-center justify-center px-4 py-8">
+          <Card className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden text-center">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-green-500/40 via-emerald-500/40 to-teal-500/40"></div>
 
             <div className="mb-6">
               <span className="text-4xl">🎉</span>
-              <h1 className="text-2xl font-black text-white mt-4">Verification Successful!</h1>
+              <h1 className="text-2xl font-black text-white mt-4">{t('successTitle')}</h1>
               <p className="text-sm text-gray-400 mt-2">
                 Your account has been created. A temporary password was sent to{' '}
-                <span className="text-white font-medium">{email}</span>. Check your inbox, then sign in and change your password.
+                <span className="text-white font-medium break-all">{email}</span>. Check your inbox, then sign in and change your password.
               </p>
             </div>
 
@@ -67,7 +70,7 @@ function VerifyOTPContent() {
               }}
               className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold rounded-xl shadow-[0_4px_15px_rgba(16,185,129,0.2)] transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer border-none"
             >
-              Go to Sign In
+              {t('goSignIn')}
             </Button>
           </Card>
         </div>
@@ -77,8 +80,8 @@ function VerifyOTPContent() {
 
   return (
     <GameBackground variant="auth">
-      <div className="flex-1 flex items-center justify-center px-4">
-        <Card className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+      <div className="flex-1 flex items-start sm:items-center justify-center px-4 py-8">
+        <Card className="w-full max-w-md bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-purple-500/40 via-indigo-500/40 to-blue-500/40"></div>
           
           <div className="mb-8 text-center">
@@ -88,43 +91,46 @@ function VerifyOTPContent() {
               </span>
             </Link>
             <h1 className="text-2xl font-black text-white">
-              Verify Your Email
+              {t('title')}
             </h1>
             <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-              We have sent a 6-digit verification code to {email || 'your email'}.
+              {t('sentTo')} <span className="break-all">{email || 'your email'}</span>.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-gray-400">Email Address</Label>
+              <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-gray-400">{t('emailLabel')}</Label>
               <Input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="you@email.com"
+                placeholder={t('emailPlaceholder')}
                 className="bg-black/40 border-white/5 focus:border-indigo-500/50 text-white placeholder-gray-600 h-12 rounded-xl transition-all duration-300"
               />
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="otp" className="text-xs font-bold uppercase tracking-wider text-gray-400">Verification Code</Label>
+              <Label htmlFor="otp" className="text-xs font-bold uppercase tracking-wider text-gray-400">{t('codeLabel')}</Label>
               <Input
                 id="otp"
                 type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]*"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
                 required
-                placeholder="e.g. 123456"
+                placeholder={t('codePlaceholder')}
                 className="bg-black/40 border-white/5 focus:border-indigo-500/50 text-white placeholder-gray-600 h-12 rounded-xl transition-all duration-300 text-center tracking-widest text-lg font-bold"
                 maxLength={6}
               />
             </div>
 
             {error && (
-              <div className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-300 text-xs font-semibold leading-relaxed" role="alert">
+              <div className="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/10 text-rose-300 text-sm font-semibold leading-relaxed" role="alert">
                 ⚠️ {error}
               </div>
             )}
@@ -137,7 +143,7 @@ function VerifyOTPContent() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  Verifying...
+                  {t('verifying')}
                 </span>
               ) : (
                 'Verify & Create Account'
@@ -149,9 +155,9 @@ function VerifyOTPContent() {
             Back to{' '}
             <Link
               href="/sign-up"
-              className="text-indigo-400 font-extrabold hover:text-indigo-300 transition-colors underline-offset-4 hover:underline"
+              className="text-indigo-400 font-extrabold hover:text-indigo-300 transition-colors underline-offset-4 hover:underline inline-block px-2 py-2"
             >
-              Sign Up
+              {t('submit')}
             </Link>
           </div>
         </Card>

@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-lexend), ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -179,10 +179,199 @@
   animation: slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Host lobby: a name landing on the projector should be seen landing. */
+@keyframes pop-in {
+  from {
+    transform: scale(0.72);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes lobby-pulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateY(-7px);
+    opacity: 1;
+  }
+}
+
+.animate-pop-in {
+  animation: pop-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-lobby-pulse {
+  animation: lobby-pulse 1.2s ease-in-out infinite;
+}
+
+/* Explanation slides.
+   Only transform and opacity are animated so the compositor can run these
+   without a layout pass — the slide carries a full-bleed image on some
+   layouts, and animating anything else there drops frames on a projector. */
+
+/* Host / classic: the answer screen recedes and the slide rises into its
+   place, the two overlapping briefly so the eye is never on an empty stage. */
+@keyframes explain-enter {
+  from {
+    transform: translateY(14px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes explain-exit {
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-10px) scale(0.98);
+    opacity: 0;
+  }
+}
+
+/* Solo: the slide is a sheet the player pulls over their answer, which reads
+   as "same screen, more detail" rather than a page change. */
+@keyframes explain-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes explain-sheet-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+/* Contents arrive just behind the container so the slide does not land as one
+   flat rectangle. Delays stay under a fifth of a second — past that it stops
+   reading as motion and starts reading as lag. */
+@keyframes explain-item-in {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes explain-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes explain-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.animate-explain-enter {
+  animation: explain-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-explain-exit {
+  animation: explain-exit 0.18s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.animate-explain-sheet-in {
+  animation: explain-sheet-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-explain-sheet-out {
+  animation: explain-sheet-out 0.24s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.animate-explain-item {
+  animation: explain-item-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Solo: the wait before the slide advances drains as a bar across the continue
+   button instead of a number ticking down in its label. The player reads "how
+   much longer" from the shape, and the page stops re-rendering every 250ms
+   just to print a new digit. Duration is set inline, per quiz. */
+@keyframes explain-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.animate-explain-progress {
+  transform-origin: left center;
+  animation: explain-progress linear both;
+}
+
+/* The question card behind a solo sheet settles back a little, which gives the
+   sheet somewhere to be in front of. */
+.explain-backdrop-recede {
+  transform: scale(0.96);
+  opacity: 0.5;
+  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.38s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-soft-drift,
   .animate-soft-drift-alt,
-  .animate-toast-in {
+  .animate-toast-in,
+  .animate-pop-in,
+  .animate-lobby-pulse {
     animation: none !important;
+  }
+
+  /* Keep a short cross-fade: a slide that swaps with nothing at all reads as
+     a glitch. Drop the movement, keep the fade. */
+  .animate-explain-enter,
+  .animate-explain-item {
+    animation: explain-fade-in 0.12s linear both !important;
+  }
+
+  .animate-explain-exit {
+    animation: explain-fade-out 0.12s linear both !important;
+  }
+
+  .animate-explain-sheet-in {
+    animation: explain-fade-in 0.12s linear both !important;
+  }
+
+  .animate-explain-sheet-out {
+    animation: explain-fade-out 0.12s linear both !important;
+  }
+
+  .explain-backdrop-recede {
+    transform: none;
+    transition: opacity 0.12s linear;
   }
 }

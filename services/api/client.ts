@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { LOCALE_COOKIE, isLocale } from '@/i18n/config'
 
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082/api'
 
@@ -11,6 +12,12 @@ async function getHeaders() {
     const token = cookieStore.get('token')?.value
     if (token) {
       headersInit['Authorization'] = `Bearer ${token}`
+    }
+    // Tells the API which language to phrase its error messages in. The reader's
+    // explicit choice, not the browser's Accept-Language, which may differ.
+    const locale = cookieStore.get(LOCALE_COOKIE)?.value
+    if (isLocale(locale)) {
+      headersInit['X-Locale'] = locale
     }
   } catch (e) {
     // Fail silently if cookie store is unavailable (e.g. static pre-render)
@@ -103,4 +110,31 @@ export async function apiRequest(
   }
 
   return data
+}
+
+/**
+ * Fetch a non-JSON response body as text, with the caller's auth cookie.
+ *
+ * apiRequest always JSON.parses, so a CSV export through it throws before the
+ * body is ever seen. The browser cannot fetch the endpoint directly either —
+ * the token lives in an httpOnly cookie on this origin, not the API's.
+ */
+export async function apiRequestText(path: string, method: string = 'GET'): Promise<string> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers: await getHeaders(),
+    cache: 'no-store',
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    let message = `Request failed with status ${res.status}`
+    try {
+      const parsed = JSON.parse(text)
+      if (typeof parsed?.error === 'string') message = parsed.error
+    } catch {
+      // Body was not JSON — keep the status-based message.
+    }
+    throw new Error(message)
+  }
+  return text
 }

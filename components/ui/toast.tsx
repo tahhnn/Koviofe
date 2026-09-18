@@ -1,7 +1,8 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { resolveApiError } from '@/lib/api-errors'
+import { useTranslations } from 'next-intl'
+import { localizeApiError, resolveApiError } from '@/lib/api-errors'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning' | 'confirm'
 
@@ -39,6 +40,9 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined)
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
+  // apiError() renders catalog keys resolved by lib/api-errors, which has no
+  // place of its own to call a hook — the provider holds the translator.
+  const tErrors = useTranslations('apiErrors')
 
   const dismiss = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
@@ -94,7 +98,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }
 
   const apiError = (raw: unknown, navigate?: (href: string) => void) => {
-    const resolved = resolveApiError(raw)
+    const resolved = localizeApiError(resolveApiError(raw), tErrors)
 
     // Auth failures must go to login — never leave the user staring at a dead-end toast.
     if (resolved.requiresLogin) {
@@ -103,7 +107,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       })
       return toast({
         message: resolved.title,
-        description: 'Đang chuyển đến trang đăng nhập…',
+        description: resolved.description,
         type: 'error',
         duration: 2500,
       })
@@ -117,14 +121,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       action:
         resolved.href && navigate
           ? {
-              label: resolved.hrefLabel || 'Tiếp tục',
+              label: resolved.hrefLabel || tErrors('continue'),
               onClick: () => navigate(resolved.href!),
             }
           : undefined,
       secondaryAction:
         resolved.secondaryHref && navigate
           ? {
-              label: resolved.secondaryHrefLabel || 'Tùy chọn khác',
+              label: resolved.secondaryHrefLabel || tErrors('otherOption'),
               onClick: () => navigate(resolved.secondaryHref!),
             }
           : undefined,
@@ -134,7 +138,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast, dismiss, success, error, info, confirm, apiError }}>
       {children}
-      <div className="fixed bottom-5 right-5 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+      <div className="fixed bottom-5 inset-x-4 sm:inset-x-auto sm:right-5 z-[9999] flex flex-col gap-3 w-auto sm:w-full sm:max-w-sm pointer-events-none">
         {toasts.map((t) => (
           <ToastCard key={t.id} toast={t} onClose={() => dismiss(t.id)} />
         ))}
@@ -152,6 +156,10 @@ export function useToast() {
 }
 
 function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
+  // ToastProvider sits inside NextIntlClientProvider, so the two buttons this
+  // component owns can be translated even though components/ui/ is otherwise
+  // kept free of copy.
+  const t = useTranslations('common')
   const hasActions =
     toast.type === 'confirm' || !!(toast.action || toast.secondaryAction)
 
@@ -203,15 +211,15 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
                   if (toast.onConfirm) toast.onConfirm()
                   onClose()
                 }}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer shadow-md"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-[11px] font-black px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer shadow-md"
               >
-                Xác nhận
+                {t('confirm')}
               </button>
               <button
                 onClick={onClose}
-                className="bg-white/10 hover:bg-white/15 text-gray-300 text-[11px] font-black px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                className="bg-white/10 hover:bg-white/15 text-gray-300 text-xs sm:text-[11px] font-black px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer"
               >
-                Hủy
+                {t('cancel')}
               </button>
             </div>
           )}
@@ -224,7 +232,7 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
                     toast.action?.onClick()
                     onClose()
                   }}
-                  className="bg-[#e85d4c] hover:bg-[#d44e3e] text-white text-[11px] font-black px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer shadow-md"
+                  className="bg-[#e85d4c] hover:bg-[#d44e3e] text-white text-xs sm:text-[11px] font-black px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer shadow-md"
                 >
                   {toast.action.label}
                 </button>
@@ -235,7 +243,7 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
                     toast.secondaryAction?.onClick()
                     onClose()
                   }}
-                  className="bg-white/10 hover:bg-white/15 text-gray-200 text-[11px] font-black px-3.5 py-1.5 rounded-xl transition-colors cursor-pointer"
+                  className="bg-white/10 hover:bg-white/15 text-gray-200 text-xs sm:text-[11px] font-black px-4 py-2.5 sm:px-3.5 sm:py-1.5 rounded-xl transition-colors cursor-pointer"
                 >
                   {toast.secondaryAction.label}
                 </button>
@@ -245,7 +253,7 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
         </div>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-white transition-colors text-xs self-start cursor-pointer px-1"
+          className="text-gray-400 hover:text-white transition-colors text-sm self-start cursor-pointer flex items-center justify-center min-h-9 min-w-9 -mr-2 -mt-2"
         >
           ✕
         </button>
