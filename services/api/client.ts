@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { LOCALE_COOKIE, isLocale } from '@/i18n/config'
 
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082/api'
 
@@ -11,6 +12,12 @@ async function getHeaders() {
     const token = cookieStore.get('token')?.value
     if (token) {
       headersInit['Authorization'] = `Bearer ${token}`
+    }
+    // Tells the API which language to phrase its error messages in. The reader's
+    // explicit choice, not the browser's Accept-Language, which may differ.
+    const locale = cookieStore.get(LOCALE_COOKIE)?.value
+    if (isLocale(locale)) {
+      headersInit['X-Locale'] = locale
     }
   } catch (e) {
     // Fail silently if cookie store is unavailable (e.g. static pre-render)

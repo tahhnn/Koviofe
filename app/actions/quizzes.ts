@@ -2,6 +2,7 @@
 
 import { apiRequest } from '@/services/api/client'
 import { revalidatePath } from 'next/cache'
+import { getTranslations } from 'next-intl/server'
 
 // Quiz CRUD
 export async function createQuiz(title: string, description?: string) {
@@ -66,6 +67,7 @@ export async function getQuizById(quizId: string) {
       displayOrder: q.order,
       options,
       correct_answer: q.correct_answer || '',
+      explanation: q.explanation || '',
     }
   })
 
@@ -126,8 +128,9 @@ export async function importQuestionsFromQuiz(
   sourceQuizId: string,
   sourceQuestionIds?: string[]
 ) {
+  const t = await getTranslations('editor')
   if (String(targetQuizId) === String(sourceQuizId)) {
-    return { success: false as const, error: 'Không thể lấy câu từ chính quiz này' }
+    return { success: false as const, error: t('importSameQuiz') }
   }
 
   const [target, source] = await Promise.all([
@@ -141,7 +144,7 @@ export async function importQuestionsFromQuiz(
     toImport = toImport.filter((q: any) => want.has(String(q.id)))
   }
   if (toImport.length === 0) {
-    return { success: false as const, error: 'Không có câu hỏi nào được chọn' }
+    return { success: false as const, error: t('importNothingSelected') }
   }
 
   const existing = (target.questions || []).map((q: any, index: number) => ({
@@ -250,6 +253,19 @@ export async function updateQuizThemeConfig(quizId: string, themeConfig: string)
 
   revalidatePath(`/quizzes/${quizId}`)
   return { success: true }
+}
+
+/**
+ * Quiz-level setting: how long a solo player's explanation slide stays up
+ * before it advances on its own. Merges into theme_config rather than
+ * replacing it, so it survives alongside game_mode.
+ */
+export async function updateQuizExplanationDuration(quizId: string, seconds: number) {
+  const quiz = await getQuizById(quizId)
+  let config: Record<string, any> = {}
+  try { config = JSON.parse(quiz.themeConfig || '{}') || {} } catch {}
+  config.explanation_duration = Math.min(Math.max(Math.round(seconds) || 10, 3), 60)
+  return updateQuizThemeConfig(quizId, JSON.stringify(config))
 }
 
 export async function deleteQuiz(quizId: string) {
@@ -397,6 +413,51 @@ export async function updateQuestion(
       points: q.points,
       order: q.order,
     }
+  })
+
+  await apiRequest(`/quizzes/${quizId}`, 'PUT', {
+    title: quizDetails.title,
+    description: quizDetails.description,
+    theme_config: quizDetails.theme_config,
+    questions: reqQuestions,
+  })
+
+  revalidatePath(`/quizzes/${quizId}`)
+  return { success: true }
+}
+
+/**
+ * Saves (or clears) a question's explanation slide.
+ *
+ * Every other mutation here rebuilds the whole quiz payload and omits
+ * `explanation`, which the API reads as "leave it alone" — so this is the only
+ * writer of the field, and none of the others can clobber a slide by accident.
+ */
+export async function updateQuestionExplanation(
+  quizId: string,
+  questionId: string,
+  explanation: string
+) {
+  const quizDetails = await apiRequest(`/quizzes/${quizId}`)
+
+  const reqQuestions = (quizDetails.questions || []).map((q: any) => {
+    let parsedOpts: any[] = []
+    try { parsedOpts = q.options ? JSON.parse(q.options) : [] } catch {}
+
+    const base = {
+      id: Number(q.id),
+      content: q.content,
+      type: q.type,
+      options: parsedOpts,
+      correct_answer: q.correct_answer,
+      duration: q.duration,
+      points: q.points,
+      order: q.order,
+    }
+
+    return String(q.id) === String(questionId)
+      ? { ...base, explanation }
+      : base
   })
 
   await apiRequest(`/quizzes/${quizId}`, 'PUT', {
@@ -704,6 +765,13 @@ export async function getGameSession(sessionId: string, playerToken?: string) {
       sessionId: String(p.room_id || room.id),
       username: p.nickname,
       isAnonymous: !p.user_id,
+      totalPoints: p.score ?? 0,
+      correctAnswers: p.correct_answers ?? 0,
+      // Solo mode progress. current_question_id is omitted by the API once a
+      // player has no question left, which is exactly "finished" — but only in
+      // solo mode; classic players never carry one, so read it there instead.
+      answeredCount: p.answered_count ?? 0,
+      currentQuestionId: p.current_question_id ? String(p.current_question_id) : null,
     })),
     leaderboard: players.map((p: any) => ({
       participantId: String(p.id),
@@ -729,19 +797,32 @@ export async function endGameSession(sessionId: string) {
   return { success: true }
 }
 
+/**
+ * Returns the failure instead of throwing it.
+ *
+ * A Server Action that throws has its message redacted in production builds —
+ * the join form received "An error occurred in the Server Components render…"
+ * and showed that to the player, so the single most common join failure,
+ * a nickname already taken in the room, was reported as an internal error.
+ */
 export async function joinGameSession(sessionCode: string, username: string, userId?: string) {
-  const data = await apiRequest('/rooms/join', 'POST', {
-    pin_code: sessionCode,
-    nickname: username,
-  })
-  
-  revalidatePath(`/play/${data.room_id}`)
-  return {
-    sessionId: String(data.room_id),
-    participantId: String(data.player_id),
-    playerToken: data.player_token, // Pass player signed token JWT
-    centrifugoToken: data.centrifugo_tok, // Pass Centrifugo client JWT
-    centrifugoClientId: data.centrifugo_cli,
+  try {
+    const data = await apiRequest('/rooms/join', 'POST', {
+      pin_code: sessionCode,
+      nickname: username,
+    })
+
+    revalidatePath(`/play/${data.room_id}`)
+    return {
+      ok: true as const,
+      sessionId: String(data.room_id),
+      participantId: String(data.player_id),
+      playerToken: data.player_token, // Pass player signed token JWT
+      centrifugoToken: data.centrifugo_tok, // Pass Centrifugo client JWT
+      centrifugoClientId: data.centrifugo_cli,
+    }
+  } catch (e: any) {
+    return { ok: false as const, error: String(e?.message || 'Failed to join room') }
   }
 }
 

@@ -1,9 +1,10 @@
 'use server'
 
-import { writeFile, mkdir } from 'fs/promises'
+import { writeFile, mkdir, readdir, stat } from 'fs/promises'
 import { join, extname } from 'path'
 import { randomBytes } from 'crypto'
 import { getSession } from '@/lib/session'
+import { getTranslations } from 'next-intl/server'
 
 const ALLOWED_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -12,7 +13,52 @@ const ALLOWED_MIME: Record<string, string> = {
   'image/gif': '.gif',
 }
 
-const MAX_BYTES = 5 * 1024 * 1024 // 5MB
+// 2MB. Quiz images are shown on a projector or a phone, where 1080p is the
+// ceiling that matters — 5MB only ever meant an unresized phone photo, and at
+// 100 questions per quiz that was 500MB of one host's quota for one quiz.
+const MAX_BYTES = 2 * 1024 * 1024
+
+// Total bytes one host may keep in the upload store. A quiz caps at 100
+// questions, and observed images run well under 100 KB, so a fully illustrated
+// quiz costs ~10 MB — the default leaves room for roughly a hundred of them
+// while bounding what a single account can do to the disk.
+const DEFAULT_QUOTA_BYTES = 1024 * 1024 * 1024 // 1GB
+
+function quotaBytes(): number {
+  const raw = Number(process.env.UPLOAD_QUOTA_BYTES_PER_USER)
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_QUOTA_BYTES
+}
+
+// Files are flat in one directory and carry their owner in the name, so usage
+// is a directory listing filtered by prefix — no extra table, and nothing to
+// keep in sync with the files actually on disk.
+function ownerPrefix(userId: string): string {
+  return `img-u${userId}-`
+}
+
+async function usedBytes(dir: string, userId: string): Promise<number> {
+  let total = 0
+  const prefix = ownerPrefix(userId)
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  } catch {
+    return 0 // first upload: directory does not exist yet
+  }
+  for (const name of names) {
+    if (!name.startsWith(prefix)) continue
+    try {
+      total += (await stat(join(dir, name))).size
+    } catch {
+      // raced with a cleanup sweep; treat as gone
+    }
+  }
+  return total
+}
+
+function formatMB(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(0)}MB`
+}
 
 export async function uploadImageAction(formData: FormData) {
   try {
@@ -27,7 +73,7 @@ export async function uploadImageAction(formData: FormData) {
     }
 
     if (file.size > MAX_BYTES) {
-      return { success: false, error: 'File too large (max 5MB)' }
+      return { success: false, error: 'File too large (max 2MB)' }
     }
 
     const mime = file.type
@@ -55,7 +101,21 @@ export async function uploadImageAction(formData: FormData) {
     const uploadDir = process.env.UPLOAD_DIR || join(process.cwd(), 'uploads')
     await mkdir(uploadDir, { recursive: true })
 
-    const fileName = `img-${Date.now()}-${randomBytes(8).toString('hex')}${safeExt}`
+    // Checked after the content checks so a rejected file never counts against
+    // the quota, and before the write so the limit is actually a limit.
+    const quota = quotaBytes()
+    const used = await usedBytes(uploadDir, session.user.id)
+    if (used + buffer.byteLength > quota) {
+      return {
+        success: false,
+        error: (await getTranslations('media'))('quotaExceeded', {
+          used: formatMB(used),
+          quota: formatMB(quota),
+        }),
+      }
+    }
+
+    const fileName = `${ownerPrefix(session.user.id)}${Date.now()}-${randomBytes(8).toString('hex')}${safeExt}`
     const filePath = join(uploadDir, fileName)
     await writeFile(filePath, buffer)
 

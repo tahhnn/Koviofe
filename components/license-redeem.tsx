@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useFormatter, useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { redeemLicenseCode } from '@/app/actions/license'
@@ -24,7 +25,10 @@ function formatCodeInput(raw: string): string {
   return ['KOVIO', ...groups].join('-')
 }
 
-export function LicenseRedeem({ onRedeemed }: { onRedeemed?: () => void }) {
+export function LicenseRedeem(
+{ onRedeemed }: { onRedeemed?: () => void }) {
+  const t = useTranslations('license')
+  const format = useFormatter()
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,9 +47,9 @@ export function LicenseRedeem({ onRedeemed }: { onRedeemed?: () => void }) {
       return
     }
     const until = res.endsAt
-      ? `đến ${new Date(res.endsAt).toLocaleDateString('vi-VN')}`
-      : 'vĩnh viễn'
-    setSuccess(`Đã kích hoạt gói ${res.planName} ${until}.`)
+      ? t('until', { date: format.dateTime(new Date(res.endsAt), { dateStyle: 'medium' }) })
+      : t('forever')
+    setSuccess(t('redeemed', { plan: res.planName, until }))
     setCode('')
     onRedeemed?.()
   }
@@ -59,12 +63,12 @@ export function LicenseRedeem({ onRedeemed }: { onRedeemed?: () => void }) {
           placeholder="KOVIO-XXXX-XXXX-XXXX"
           spellCheck={false}
           autoComplete="off"
-          aria-label="Mã kích hoạt"
+          aria-label={t('codeLabel')}
           className="font-mono tracking-wider uppercase"
         />
         <Button type="submit" disabled={busy || !code} className="shrink-0">
           <KeyRound className="w-4 h-4 mr-2" />
-          {busy ? 'Đang kích hoạt...' : 'Kích hoạt'}
+          {busy ? t('redeeming') : t('redeem')}
         </Button>
       </div>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useLocale, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,9 +13,12 @@ import {
   adminListPlans,
   adminListSubscriptions,
   adminExportSubscriptionHistoryCsv,
+  adminGetEnforcement,
   adminListSubscriptionHistory,
+  adminClawBackLicenseCode,
   adminRevokeLicenseCode,
   adminSendLicenseCodes,
+  adminSetEnforcement,
   getMyLicense,
   adminUpdatePlan,
   type LicenseCode,
@@ -22,8 +26,11 @@ import {
   type SubscriptionEvent,
   type LicenseSubscriptionRow,
   type PricingPlan,
+  type EnforcementState,
+  type EnforcementReadiness,
 } from '@/app/actions/license'
-import { Ban, Copy, Download, KeyRound, Mail, RefreshCw, Save } from 'lucide-react'
+import { Ban, Copy, Download, KeyRound, Mail, RefreshCw, Save, Undo2 } from 'lucide-react'
+import { isPaidPlan } from '@/lib/license'
 
 type DurationKey = '30' | '90' | '365' | 'lifetime'
 
@@ -31,14 +38,16 @@ function formatLimit(n: number) {
   return n < 0 ? '∞' : String(n)
 }
 
-function formatVnd(n: number) {
-  return new Intl.NumberFormat('vi-VN').format(n) + '\u0111'
+// The locale has to be passed in: these are module-level helpers, and the
+// reader's language is only known inside the component.
+function formatVnd(n: number, locale: string) {
+  return new Intl.NumberFormat(locale).format(n) + '\u0111'
 }
 
-function formatDateTime(iso?: string | null) {
+function formatDateTime(iso: string | null | undefined, locale: string) {
   if (!iso) return '\u2014'
   try {
-    return new Date(iso).toLocaleString('vi-VN', {
+    return new Date(iso).toLocaleString(locale, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -50,40 +59,53 @@ function formatDateTime(iso?: string | null) {
   }
 }
 
-function actionStyle(action: string): { label: string; cls: string } {
+/** One pre-flight check: green tick when satisfied, red cross when it blocks the
+ * switch, amber bang when it is only worth knowing. */
+function ReadinessLine({ ok, warn, text }: { ok: boolean; warn?: boolean; text: string }) {
+  const mark = ok ? '\u2713' : warn ? '!' : '\u2717'
+  const cls = ok ? 'text-emerald-400' : warn ? 'text-amber-400' : 'text-rose-400'
+  return (
+    <div className="flex items-start gap-2 text-xs text-[#c5c2ba]">
+      <span className={`font-bold ${cls}`}>{mark}</span>
+      <span>{text}</span>
+    </div>
+  )
+}
+
+function actionStyle(action: string, t: (key: string) => string): { label: string; cls: string } {
   switch (action) {
     case 'grant':
-      return { label: 'C\u1ea5p m\u1edbi', cls: 'text-emerald-400' }
+      return { label: t('grant'), cls: 'text-emerald-400' }
     case 'renew':
-      return { label: 'Gia h\u1ea1n', cls: 'text-sky-400' }
+      return { label: t('renew'), cls: 'text-sky-400' }
     case 'downgrade':
-      return { label: 'Ng\u1eaft', cls: 'text-rose-400' }
+      return { label: t('downgrade'), cls: 'text-rose-400' }
     case 'expire':
-      return { label: 'H\u1ebft h\u1ea1n', cls: 'text-amber-400' }
+      return { label: t('expire'), cls: 'text-amber-400' }
     default:
       return { label: action, cls: 'text-[#9a9eab]' }
   }
 }
 
-function sourceLabel(source: string) {
+function sourceLabel(source: string, t: (key: string) => string) {
   switch (source) {
     case 'code_redeem':
-      return 'Nh\u1eadp m\u00e3'
+      return t('sourceCodeRedeem')
     case 'admin_assign':
-      return 'Admin c\u1ea5p'
+      return t('sourceAdminAssign')
     case 'expiry_auto':
-      return 'T\u1ef1 h\u1ebft h\u1ea1n'
+      return t('sourceExpiryAuto')
     default:
       return source
   }
 }
 
-function formatDate(iso?: string | null) {
+function formatDate(iso: string | null | undefined, locale: string) {
   if (!iso) return '—'
   try {
     // Explicit 2-digit parts: the vi-VN default drops the leading zero on the
     // month, so a column of dates comes out ragged (13/9/2027 next to 13/10/2026).
-    return new Date(iso).toLocaleDateString('vi-VN', {
+    return new Date(iso).toLocaleDateString(locale, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -94,6 +116,8 @@ function formatDate(iso?: string | null) {
 }
 
 export default function AdminLicensePage() {
+  const t = useTranslations('adminLicense')
+  const locale = useLocale()
   const router = useRouter()
   const [tab, setTab] = useState<'subscriptions' | 'plans' | 'codes' | 'history'>('subscriptions')
 
@@ -110,6 +134,11 @@ export default function AdminLicensePage() {
   // null = not read yet; the banner stays hidden rather than asserting a state
   // it does not know.
   const [enforcement, setEnforcement] = useState<boolean | null>(null)
+  const [enf, setEnf] = useState<EnforcementState | null>(null)
+  const [enfBusy, setEnfBusy] = useState(false)
+  // Set when a PUT came back 409: the freshly recomputed verdict, shown next to
+  // the "turn on anyway" button rather than the copy fetched on page load.
+  const [enfBlocked, setEnfBlocked] = useState<EnforcementReadiness | null>(null)
 
   const [mintAmount, setMintAmount] = useState('')
   const [mintRef, setMintRef] = useState('')
@@ -138,17 +167,21 @@ export default function AdminLicensePage() {
     setLoading(true)
     setErr(null)
     try {
-      const [p, s, me] = await Promise.all([
+      const [p, s, me, e] = await Promise.all([
         adminListPlans(),
         adminListSubscriptions(search),
         getMyLicense(),
+        adminGetEnforcement(),
       ])
-      setEnforcement(me?.enforcement ?? null)
+      setEnf(e)
+      // Fall back to /license/me so the state still reads true if the newer
+      // endpoint is unavailable during a rolling deploy.
+      setEnforcement(e?.enforcement ?? me?.enforcement ?? null)
       setPlans(p)
       setDrafts(Object.fromEntries(p.map((x) => [x.id, { ...x }])))
       setSubs(s)
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Failed to load'
+      const message = e instanceof Error ? e.message : t('loadFailed')
       setErr(message)
       if (message === 'UNAUTHORIZED_OR_FORBIDDEN' || /forbidden|insufficient/i.test(message)) {
         router.push('/dashboard')
@@ -178,7 +211,7 @@ export default function AdminLicensePage() {
         })
       )
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load codes')
+      setErr(e instanceof Error ? e.message : t('loadCodesFailed'))
     }
   }, [codeFilter, codeSearch])
 
@@ -191,7 +224,7 @@ export default function AdminLicensePage() {
   const mintCodes = async () => {
     const count = Number(mintCount)
     if (!Number.isInteger(count) || count < 1 || count > 500) {
-      setErr('Số lượng phải từ 1 đến 500')
+      setErr(t('countRange'))
       return
     }
     setBusyKey('mint')
@@ -208,9 +241,9 @@ export default function AdminLicensePage() {
       })
       setJustMinted(minted)
       await loadCodes()
-      flash(`Đã tạo ${minted.length} mã`)
+      flash(t('mintedCount', { count: minted.length }))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Không tạo được mã')
+      setErr(e instanceof Error ? e.message : t('mintFailed'))
     } finally {
       setBusyKey(null)
     }
@@ -227,7 +260,7 @@ export default function AdminLicensePage() {
       setEvents(res.events)
       setSummary(res.summary)
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Failed to load history')
+      setErr(e instanceof Error ? e.message : t('loadHistoryFailed'))
     }
   }, [histFrom, histTo, histEmail, histAction])
 
@@ -256,9 +289,9 @@ export default function AdminLicensePage() {
       a.download = `license-history-${new Date().toISOString().slice(0, 10)}.csv`
       a.click()
       URL.revokeObjectURL(url)
-      flash('Đã tải CSV')
+      flash(t('csvDownloaded'))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Không xuất được CSV')
+      setErr(e instanceof Error ? e.message : t('csvFailed'))
     } finally {
       setBusyKey(null)
     }
@@ -278,7 +311,7 @@ export default function AdminLicensePage() {
       setSendEmail('')
       setSendName('')
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Không gửi được email')
+      setErr(e instanceof Error ? e.message : t('emailFailed'))
     } finally {
       setBusyKey(null)
     }
@@ -289,9 +322,9 @@ export default function AdminLicensePage() {
     try {
       await adminRevokeLicenseCode(code)
       await loadCodes()
-      flash(`Đã thu hồi ${code}`)
+      flash(t('revokedCode', { code }))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Không thu hồi được')
+      setErr(e instanceof Error ? e.message : t('revokeFailed'))
     } finally {
       setBusyKey(null)
     }
@@ -302,9 +335,9 @@ export default function AdminLicensePage() {
   const copyText = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text)
-      flash(`Đã copy ${label}`)
+      flash(t('copiedLabel', { label }))
     } catch {
-      setErr('Trình duyệt chặn clipboard — bôi đen và copy thủ công')
+      setErr(t('clipboardBlocked'))
     }
   }
 
@@ -329,10 +362,10 @@ export default function AdminLicensePage() {
         allow_remove_watermark: !!draft.allow_remove_watermark,
         is_active: draft.is_active !== false,
       })
-      flash(`Đã lưu gói ${planId}`)
+      flash(t('planSaved', { plan: planId }))
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Save failed')
+      setErr(e instanceof Error ? e.message : t('saveFailed'))
     } finally {
       setBusyKey(null)
     }
@@ -344,15 +377,37 @@ export default function AdminLicensePage() {
       const dur = durationByUser[userId] || '30'
       if (dur === 'lifetime') {
         await adminAssignPlan({ userId, planId: 'pro', lifetime: true })
-        flash(`Đã cấp Pro vĩnh viễn cho #${userId}`)
+        flash(t('grantedLifetime', { user: userId }))
       } else {
         const days = parseInt(dur, 10)
         await adminAssignPlan({ userId, planId: 'pro', endsAtDays: days })
-        flash(`Đã cấp Pro ${days} ngày cho #${userId}`)
+        flash(t('grantedDays', { days, user: userId }))
       }
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Assign failed')
+      setErr(e instanceof Error ? e.message : t('assignFailed'))
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  const clawBackCode = async (code: string, used: number) => {
+    if (!window.confirm(t('confirmClawBack', { code, count: used }))) return
+    setBusyKey(`clawback-${code}`)
+    try {
+      const r = await adminClawBackLicenseCode(code)
+      flash(
+        t('clawBackDone', {
+          revoked: r.revoked,
+          total: r.total,
+          skipped: r.skipped,
+          rooms: r.rooms_closed,
+        }),
+      )
+      await loadCodes()
+      await load()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : t('clawBackFailed'))
     } finally {
       setBusyKey(null)
     }
@@ -361,21 +416,50 @@ export default function AdminLicensePage() {
   const revokeToFree = async (userId: number, email?: string) => {
     const label = email || `#${userId}`
     if (
-      !window.confirm(
-        `Ngắt license Pro của ${label}?\nUser sẽ về gói Free ngay lập tức.`
-      )
+      !window.confirm(t('confirmRevoke', { label }))
     ) {
       return
     }
     setBusyKey(`free-${userId}`)
     try {
-      await adminAssignPlan({ userId, planId: 'free' })
-      flash(`Đã ngắt Pro → Free · ${label}`)
+      await adminAssignPlan({ userId, planId: 'free', closeRooms: true })
+      flash(t('revokedToFree', { label }))
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Revoke failed')
+      setErr(e instanceof Error ? e.message : t('revokeFailed'))
     } finally {
       setBusyKey(null)
+    }
+  }
+
+  const toggleEnforcement = async (next: boolean, force = false) => {
+    const message = next
+      ? force
+        ? t('confirmEnforcementForce', { count: enf?.readiness.blockers.length ?? 0 })
+        : t('confirmEnforcementOn', { hosts: enf?.readiness.active_hosts_on_free ?? 0 })
+      : t('confirmEnforcementOff')
+    if (!window.confirm(message)) return
+
+    setEnfBusy(true)
+    setErr(null)
+    try {
+      const st = await adminSetEnforcement(next, force)
+      setEnf(st)
+      setEnforcement(st.enforcement)
+      setEnfBlocked(null)
+      flash(t(next ? 'enforcementTurnedOn' : 'enforcementTurnedOff'))
+      await load()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : t('enforcementFailed'))
+      // The 409 body does not survive the throw, so re-read to show which
+      // checks are actually failing right now.
+      const st = await adminGetEnforcement()
+      if (st) {
+        setEnf(st)
+        setEnfBlocked(st.readiness)
+      }
+    } finally {
+      setEnfBusy(false)
     }
   }
 
@@ -389,7 +473,7 @@ export default function AdminLicensePage() {
   if (loading && plans.length === 0 && subs.length === 0) {
     return (
       <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-10 max-w-6xl">
-        <p className="text-[#9a9eab] text-sm">Loading license console…</p>
+        <p className="text-[#9a9eab] text-sm">{t('loading')}</p>
       </main>
     )
   }
@@ -398,35 +482,12 @@ export default function AdminLicensePage() {
     <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-10 max-w-6xl space-y-6 sm:space-y-8">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-[#f2f0eb] tracking-tight">Quản lý License</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-[#f2f0eb] tracking-tight">{t('title')}</h1>
               <p className="text-sm text-[#9a9eab] mt-2 max-w-2xl">
-                Role admin ≠ gói Pro. Tab Subscriptions: <strong className="text-[#c5c2ba] font-semibold">Cấp Pro</strong>{' '}
-                hoặc <strong className="text-[#c5c2ba] font-semibold">Ngắt Pro</strong> (về Free ngay). Player vào bằng PIN,
-                không cần tài khoản.
+                {t.rich('roleNoteFull', {
+                  b: (c) => <strong className="text-[#c5c2ba] font-semibold">{c}</strong>,
+                })}
               </p>
-              {enforcement !== null && (
-                <p
-                  className={`mt-3 text-xs rounded-xl border px-3 py-2 max-w-2xl ${
-                    enforcement
-                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200/90'
-                      : 'border-amber-500/30 bg-amber-500/10 text-amber-200/90'
-                  }`}
-                >
-                  {enforcement ? (
-                    <>
-                      Enforcement đang <strong>BẬT</strong>. Tài khoản gói{' '}
-                      <code className="font-mono">free</code> không tạo được quiz hay phòng chơi — cấp quyền bằng
-                      mã kích hoạt hoặc gán gói ở tab User licenses.
-                    </>
-                  ) : (
-                    <>
-                      Enforcement đang <strong>TẮT</strong> — mọi host đều được mở khóa, gói không chặn gì.
-                      Bật bằng biến môi trường <code className="font-mono break-all">LICENSE_ENFORCEMENT=true</code>{' '}
-                      rồi restart backend.
-                    </>
-                  )}
-                </p>
-              )}
             </div>
             <Button
               variant="ghost"
@@ -434,17 +495,134 @@ export default function AdminLicensePage() {
               className="text-[#9a9eab] hover:text-[#f2f0eb] h-9 rounded-xl text-xs shrink-0"
             >
               <RefreshCw className="w-4 h-4 mr-1.5" />
-              Refresh
+              {t('refresh')}
             </Button>
           </div>
+
+          {enforcement !== null && (
+            <section
+              className={`rounded-2xl border p-4 sm:p-5 space-y-3 ${
+                enforcement
+                  ? 'border-emerald-500/30 bg-emerald-500/10'
+                  : 'border-amber-500/30 bg-amber-500/10'
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-[#9a9eab]">
+                    {t('enforcementToggleTitle')}
+                  </div>
+                  <div
+                    className={`text-lg font-black mt-0.5 ${
+                      enforcement ? 'text-emerald-300' : 'text-amber-300'
+                    }`}
+                  >
+                    {enforcement ? t('on') : t('off')}
+                  </div>
+                  {enf?.updated_at && (
+                    <div className="text-xs text-[#9a9eab] mt-0.5">
+                      {t('enforcementUpdatedAt', { when: formatDateTime(enf.updated_at, locale) })}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col items-stretch sm:items-end gap-2">
+                  <Button
+                    disabled={enfBusy || !!enf?.env_pinned}
+                    onClick={() => toggleEnforcement(!enforcement)}
+                    className={`h-10 rounded-xl text-xs font-bold border-none ${
+                      enforcement
+                        ? 'bg-rose-500/80 hover:bg-rose-500 text-white'
+                        : 'bg-emerald-500/80 hover:bg-emerald-500 text-[#0c1412]'
+                    }`}
+                  >
+                    {enforcement ? t('enforcementTurnOff') : t('enforcementTurnOn')}
+                  </Button>
+                  {enfBlocked && !enforcement && (
+                    <Button
+                      variant="outline"
+                      disabled={enfBusy}
+                      onClick={() => toggleEnforcement(true, true)}
+                      className="h-9 rounded-xl text-xs border-rose-500/40 text-rose-300 hover:bg-rose-500/10"
+                    >
+                      {t('enforcementForceOn')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <p className="text-xs text-[#c5c2ba] max-w-2xl">
+                {enf?.env_pinned
+                  ? t.rich('enforcementEnvPinned', {
+                      b: (c) => <strong>{c}</strong>,
+                      code: (c) => <code className="font-mono break-all">{c}</code>,
+                    })
+                  : t.rich(enforcement ? 'enforcementOnFull' : 'enforcementOffFull', {
+                      b: (c) => <strong>{c}</strong>,
+                      code: (c) => <code className="font-mono break-all">{c}</code>,
+                    })}
+              </p>
+
+              {!enforcement && !enf?.env_pinned && enf?.readiness && (
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3 space-y-1.5">
+                  <div className="text-[10px] uppercase tracking-widest text-[#9a9eab]">
+                    {t('readinessTitle')} ·{' '}
+                    <span className={enf.readiness.ready ? 'text-emerald-400' : 'text-rose-400'}>
+                      {enf.readiness.ready ? t('readinessReady') : t('readinessNotReady')}
+                    </span>
+                  </div>
+                  <ReadinessLine
+                    ok={enf.readiness.free_plan_locked}
+                    text={
+                      enf.readiness.free_plan_locked
+                        ? t('readinessFreePlanLocked')
+                        : t('readinessFreePlanOpen')
+                    }
+                  />
+                  <ReadinessLine
+                    ok={enf.readiness.admins_without_pro.length === 0}
+                    text={
+                      enf.readiness.admins_without_pro.length === 0
+                        ? t('readinessAdminsOk')
+                        : t('readinessAdminsMissing', {
+                            count: enf.readiness.admins_without_pro.length,
+                            emails: enf.readiness.admins_without_pro.map((a) => a.email).join(', '),
+                          })
+                    }
+                  />
+                  <ReadinessLine
+                    ok={enf.readiness.active_hosts_on_free === 0}
+                    warn
+                    text={
+                      enf.readiness.active_hosts_on_free === 0
+                        ? t('readinessHostsOk')
+                        : t('readinessHostsOnFree', {
+                            count: enf.readiness.active_hosts_on_free,
+                            total: enf.readiness.total_active_hosts,
+                          })
+                    }
+                  />
+                  {enf.readiness.live_rooms_at_risk > 0 && (
+                    <ReadinessLine
+                      ok={false}
+                      warn
+                      text={t('readinessLiveRooms', { count: enf.readiness.live_rooms_at_risk })}
+                    />
+                  )}
+                  {!enf.readiness.grandfather_ran && (
+                    <ReadinessLine ok={false} warn text={t('readinessGrandfatherMissing')} />
+                  )}
+                </div>
+              )}
+            </section>
+          )}
 
           <div className="flex gap-2 border-b border-white/10 pb-px overflow-x-auto">
             {(
               [
-                ['subscriptions', 'User licenses'],
-                ['codes', 'Mã kích hoạt'],
-                ['history', 'Lịch sử / Đối soát'],
-                ['plans', 'Plan catalog'],
+                ['subscriptions', t('tabSubscriptions')],
+                ['codes', t('tabCodes')],
+                ['history', t('tabHistory')],
+                ['plans', t('tabPlans')],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -486,33 +664,33 @@ export default function AdminLicensePage() {
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Tìm email / nickname…"
+                  placeholder={t('searchUser')}
                   className="bg-black/40 border-white/10 text-[#f2f0eb] h-11 rounded-xl flex-1"
                 />
                 <Button
                   type="submit"
                   className="h-11 rounded-xl bg-[#e85d4c] hover:bg-[#d14e3e] text-white font-bold border-none"
                 >
-                  Search
+                  {t('search')}
                 </Button>
               </form>
 
               {loading ? (
-                <p className="text-sm text-[#9a9eab]">Đang tải…</p>
+                <p className="text-sm text-[#9a9eab]">{t('loadingShort')}</p>
               ) : (
                 <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03]">
                   <table className="w-full min-w-[760px] text-left text-sm">
                     <thead>
                       <tr className="border-b border-white/10 text-[11px] uppercase tracking-wider text-[#9a9eab]">
-                        <th className="px-4 py-3 font-semibold">User</th>
-                        <th className="px-4 py-3 font-semibold">Effective license</th>
-                        <th className="px-4 py-3 font-semibold">Expires</th>
-                        <th className="px-4 py-3 font-semibold">Cấp / Ngắt license</th>
+                        <th className="px-4 py-3 font-semibold">{t('user')}</th>
+                        <th className="px-4 py-3 font-semibold">{t('effectiveLicense')}</th>
+                        <th className="px-4 py-3 font-semibold">{t('expires')}</th>
+                        <th className="px-4 py-3 font-semibold">{t('grantRevoke')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {subs.map((s) => {
-                        const isPro = s.plan_id === 'pro'
+                        const isPro = isPaidPlan(s.plan_id)
                         return (
                           <tr key={s.user_id} className="border-b border-white/5 hover:bg-white/[0.02]">
                             <td className="px-4 py-3 align-top">
@@ -527,12 +705,35 @@ export default function AdminLicensePage() {
                                 {s.plan_name || s.plan_id}
                               </div>
                               <div className="text-xs text-[#9a9eab] mt-0.5">
-                                {s.max_players_per_room} players · {s.max_concurrent_rooms ?? '—'} rooms
-                                {s.allow_player_paced ? ' · solo ✓' : ' · solo ✗'}
+                                {t('playersRooms', {
+                                  players: s.max_players_per_room,
+                                  rooms: s.max_concurrent_rooms ?? '—',
+                                })}
+                                {' · '}
+                                {s.allow_player_paced ? t('soloYes') : t('soloNo')}
                               </div>
                             </td>
                             <td className="px-4 py-3 align-top text-[#c5c2ba] text-xs">
-                              {s.lifetime || !s.ends_at ? 'Không hết hạn' : formatDate(s.ends_at)}
+                              {s.lifetime || !s.ends_at ? (
+                                t('noExpiry')
+                              ) : (
+                                <>
+                                  {formatDate(s.ends_at, locale)}
+                                  <div
+                                    className={`mt-0.5 ${
+                                      s.expired
+                                        ? 'text-rose-400'
+                                        : (s.days_remaining ?? 99) <= 7
+                                          ? 'text-amber-400'
+                                          : 'text-[#9a9eab]'
+                                    }`}
+                                  >
+                                    {s.expired
+                                      ? t('expiredBadge')
+                                      : t('daysLeft', { n: s.days_remaining ?? 0 })}
+                                  </div>
+                                </>
+                              )}
                             </td>
                             <td className="px-4 py-3 align-top">
                               <div className="flex flex-col gap-2 min-w-[220px]">
@@ -546,30 +747,26 @@ export default function AdminLicensePage() {
                                   }
                                   className="bg-black/40 border border-white/10 text-[#f2f0eb] h-10 sm:h-9 rounded-lg text-xs px-2"
                                 >
-                                  <option value="30">Pro · 30 ngày</option>
-                                  <option value="90">Pro · 90 ngày</option>
-                                  <option value="365">Pro · 1 năm</option>
-                                  <option value="lifetime">Pro · vĩnh viễn</option>
+                                  <option value="30">{t('pro30')}</option>
+                                  <option value="90">{t('pro90')}</option>
+                                  <option value="365">{t('pro1y')}</option>
+                                  <option value="lifetime">{t('proLifetime')}</option>
                                 </select>
                                 <div className="flex gap-2">
                                   <Button
-                                    disabled={!!busyKey}
+                                    disabled={busyKey === `pro-${s.user_id}`}
                                     onClick={() => grantPro(s.user_id)}
                                     className="flex-1 h-9 rounded-lg text-xs font-bold bg-[#e85d4c]/90 hover:bg-[#e85d4c] text-white border-none"
                                   >
-                                    Cấp Pro
+                                    {t('grantPro')}
                                   </Button>
                                   <Button
-                                    disabled={!!busyKey || s.plan_id === 'free'}
+                                    disabled={busyKey === `free-${s.user_id}` || !isPro}
                                     onClick={() => revokeToFree(s.user_id, s.email)}
-                                    title={
-                                      s.plan_id === 'free'
-                                        ? 'User đang Free — không cần ngắt'
-                                        : 'Ngắt Pro, về Free ngay'
-                                    }
+                                    title={isPro ? t('revokeProTitle') : t('alreadyFree')}
                                     className="flex-1 h-9 rounded-lg text-xs font-bold border border-rose-500/40 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 disabled:opacity-40 disabled:border-white/10 disabled:bg-white/5 disabled:text-[#5c6170]"
                                   >
-                                    Ngắt Pro
+                                    {t('revokePro')}
                                   </Button>
                                 </div>
                               </div>
@@ -580,7 +777,7 @@ export default function AdminLicensePage() {
                       {subs.length === 0 && (
                         <tr>
                           <td colSpan={4} className="px-4 py-8 text-center text-[#9a9eab] text-sm">
-                            Không có user phù hợp.
+                            {t('noUsers')}
                           </td>
                         </tr>
                       )}
@@ -609,13 +806,13 @@ export default function AdminLicensePage() {
                           onChange={(e) => updateDraft(p.id, 'is_active', e.target.checked)}
                           className="size-5 sm:size-4 rounded border-white/20"
                         />
-                        Active
+                        {t('planActive')}
                       </label>
                     </div>
 
                     <div className="space-y-3">
                       <div>
-                        <Label className="text-[10px] uppercase tracking-wider text-[#9a9eab]">Name</Label>
+                        <Label className="text-[10px] uppercase tracking-wider text-[#9a9eab]">{t('name')}</Label>
                         <Input
                           value={d.name}
                           onChange={(e) => updateDraft(p.id, 'name', e.target.value)}
@@ -624,7 +821,7 @@ export default function AdminLicensePage() {
                       </div>
                       <div>
                         <Label className="text-[10px] uppercase tracking-wider text-[#9a9eab]">
-                          Description
+                          {t('planDescription')}
                         </Label>
                         <textarea
                           value={d.description || ''}
@@ -636,12 +833,12 @@ export default function AdminLicensePage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {(
                           [
-                            ['price_monthly_vnd', 'Price VND'],
-                            ['max_players_per_room', 'Players / room'],
-                            ['max_quizzes', 'Max quizzes (-1=∞)'],
-                            ['max_templates', 'Max templates'],
-                            ['max_concurrent_rooms', 'Concurrent rooms'],
-                            ['max_questions_per_quiz', 'Questions / quiz'],
+                            ['price_monthly_vnd', t('priceVnd')],
+                            ['max_players_per_room', t('playersPerRoomLabel')],
+                            ['max_quizzes', t('maxQuizzesLabel')],
+                            ['max_templates', t('maxTemplatesLabel')],
+                            ['max_concurrent_rooms', t('concurrentRoomsLabel')],
+                            ['max_questions_per_quiz', t('questionsPerQuizLabel')],
                           ] as const
                         ).map(([key, label]) => (
                           <div key={key}>
@@ -660,11 +857,11 @@ export default function AdminLicensePage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#c5c2ba]">
                         {(
                           [
-                            ['allow_player_paced', 'Player-paced / Solo'],
-                            ['allow_custom_branding', 'Custom branding'],
-                            ['allow_export_logs', 'Export logs'],
-                            ['allow_priority_support', 'Priority support'],
-                            ['allow_remove_watermark', 'Remove watermark'],
+                            ['allow_player_paced', t('featPlayerPaced')],
+                            ['allow_custom_branding', t('featCustomBranding')],
+                            ['allow_export_logs', t('featExportLogs')],
+                            ['allow_priority_support', t('featPrioritySupport')],
+                            ['allow_remove_watermark', t('featRemoveWatermark')],
                           ] as const
                         ).map(([key, label]) => (
                           <label key={key} className="flex items-center gap-2 cursor-pointer min-h-10 sm:min-h-0 py-1 sm:py-0">
@@ -686,7 +883,7 @@ export default function AdminLicensePage() {
                       className="w-full h-11 rounded-xl bg-[#e85d4c] hover:bg-[#d14e3e] text-white font-bold border-none"
                     >
                       <Save className="w-4 h-4 mr-2" />
-                      Save {p.id} ({formatLimit(d.max_players_per_room)} players)
+                      {t('savePlanBtn', { plan: p.id, players: formatLimit(d.max_players_per_room) })}
                     </Button>
                   </div>
                 )
@@ -698,12 +895,12 @@ export default function AdminLicensePage() {
               <div className="rounded-2xl border border-white/10 bg-white/5 p-5 space-y-4">
                 <div className="flex items-center gap-2">
                   <KeyRound className="w-4 h-4 text-[#e85d4c]" />
-                  <h2 className="font-bold text-[#f2f0eb]">Tạo lô mã kích hoạt</h2>
+                  <h2 className="font-bold text-[#f2f0eb]">{t('mintTitle')}</h2>
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[#9a9eab]">Gói</Label>
+                    <Label className="text-xs text-[#9a9eab]">{t('plan')}</Label>
                     <select
                       value={mintPlan}
                       onChange={(e) => setMintPlan(e.target.value)}
@@ -719,32 +916,32 @@ export default function AdminLicensePage() {
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[#9a9eab]">Số lượng</Label>
+                    <Label className="text-xs text-[#9a9eab]">{t('quantity')}</Label>
                     <Input value={mintCount} onChange={(e) => setMintCount(e.target.value)} inputMode="numeric" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[#9a9eab]">Số ngày gói (0 = vĩnh viễn)</Label>
+                    <Label className="text-xs text-[#9a9eab]">{t('durationDays')}</Label>
                     <Input value={mintDuration} onChange={(e) => setMintDuration(e.target.value)} inputMode="numeric" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[#9a9eab]">Lượt dùng / mã</Label>
+                    <Label className="text-xs text-[#9a9eab]">{t('usesPerCode')}</Label>
                     <Input value={mintMaxUses} onChange={(e) => setMintMaxUses(e.target.value)} inputMode="numeric" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[#9a9eab]">Hạn dùng mã (ngày)</Label>
+                    <Label className="text-xs text-[#9a9eab]">{t('codeShelfLife')}</Label>
                     <Input
                       value={mintShelfDays}
                       onChange={(e) => setMintShelfDays(e.target.value)}
-                      placeholder="trống = không hạn"
+                      placeholder={t('blankNoExpiry')}
                       inputMode="numeric"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[#9a9eab]">Lô</Label>
+                    <Label className="text-xs text-[#9a9eab]">{t('batchLabel')}</Label>
                     <Input value={mintBatch} onChange={(e) => setMintBatch(e.target.value)} placeholder="thang9" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[#9a9eab]">Số tiền / mã (VND)</Label>
+                    <Label className="text-xs text-[#9a9eab]">{t('amountPerCode')}</Label>
                     <Input
                       value={mintAmount}
                       onChange={(e) => setMintAmount(e.target.value)}
@@ -753,7 +950,7 @@ export default function AdminLicensePage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-[#9a9eab]">Mã tham chiếu thanh toán</Label>
+                    <Label className="text-xs text-[#9a9eab]">{t('paymentRef')}</Label>
                     <Input
                       value={mintRef}
                       onChange={(e) => setMintRef(e.target.value)}
@@ -762,11 +959,7 @@ export default function AdminLicensePage() {
                   </div>
                 </div>
 
-                <p className="text-xs text-[#9a9eab]">
-                  Số tiền và mã tham chiếu đi theo mã kích hoạt, rồi đi tiếp vào lịch sử khi khách nhập mã.
-                  Đó là thứ duy nhất nối gói đã cấp với khoản tiền đã nhận qua trung gian — bỏ trống
-                  thì sau này không đối soát được.
-                </p>
+                <p className="text-xs text-[#9a9eab]">{t('amountRefNote')}</p>
 
                 <Button
                   onClick={mintCodes}
@@ -774,22 +967,22 @@ export default function AdminLicensePage() {
                   className="h-11 rounded-xl bg-[#e85d4c] hover:bg-[#d14e3e] text-white font-bold border-none"
                 >
                   <KeyRound className="w-4 h-4 mr-2" />
-                  {busyKey === 'mint' ? 'Đang tạo…' : 'Tạo mã'}
+                  {busyKey === 'mint' ? t('minting') : t('mintCodes')}
                 </Button>
 
                 {justMinted.length > 0 && (
                   <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-semibold text-emerald-300">
-                        {justMinted.length} mã vừa tạo — copy và lưu lại ngay
+                        {t('justMinted', { count: justMinted.length })}
                       </p>
                       <Button
                         variant="outline"
-                        onClick={() => copyText(justMinted.map((c) => c.code).join('\n'), 'toàn bộ mã')}
+                        onClick={() => copyText(justMinted.map((c) => c.code).join('\n'), t('allCodes'))}
                         className="h-9 rounded-xl border-white/20 text-[#c5c2ba] shrink-0"
                       >
                         <Copy className="w-4 h-4 mr-2" />
-                        Copy tất cả
+                        {t('copyAll')}
                       </Button>
                     </div>
                     <div className="font-mono text-xs text-[#f2f0eb] grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-56 overflow-y-auto">
@@ -801,7 +994,7 @@ export default function AdminLicensePage() {
                     </div>
 
                     <div className="border-t border-white/10 pt-3 space-y-2">
-                      <Label className="text-xs text-[#9a9eab]">Gửi cả lô này qua email</Label>
+                      <Label className="text-xs text-[#9a9eab]">{t('emailBatch')}</Label>
                       <div className="flex flex-col sm:flex-row gap-2">
                         <Input
                           value={sendEmail}
@@ -812,7 +1005,7 @@ export default function AdminLicensePage() {
                         <Input
                           value={sendName}
                           onChange={(e) => setSendName(e.target.value)}
-                          placeholder="Tên người mua (tùy chọn)"
+                          placeholder={t('buyerName')}
                         />
                         <Button
                           disabled={busyKey === 'send' || !sendEmail}
@@ -820,12 +1013,11 @@ export default function AdminLicensePage() {
                           className="shrink-0 h-11 rounded-xl bg-[#e85d4c] hover:bg-[#d14e3e] text-white font-bold border-none"
                         >
                           <Mail className="w-4 h-4 mr-2" />
-                          {busyKey === 'send' ? 'Đang gửi…' : 'Gửi'}
+                          {busyKey === 'send' ? t('sending') : t('send')}
                         </Button>
                       </div>
                       <p className="text-xs text-[#9a9eab]">
-                        Gửi tất cả {justMinted.length} mã trong một email. Cột đã gửi chỉ được đánh dấu khi
-                        SMTP nhận thành công.
+                        {t('sendBatchNote', { count: justMinted.length })}
                       </p>
                     </div>
                   </div>
@@ -834,25 +1026,25 @@ export default function AdminLicensePage() {
 
               <div className="flex flex-wrap gap-2 items-end">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-[#9a9eab]">Lọc</Label>
+                  <Label className="text-xs text-[#9a9eab]">{t('filter')}</Label>
                   <select
                     value={codeFilter}
                     onChange={(e) => setCodeFilter(e.target.value as typeof codeFilter)}
                     className="h-10 rounded-xl bg-black/40 border border-white/10 px-3 text-sm text-[#f2f0eb]"
                   >
-                    <option value="">Tất cả</option>
-                    <option value="available">Còn dùng được</option>
-                    <option value="used">Đã dùng hết</option>
-                    <option value="revoked">Đã thu hồi</option>
+                    <option value="">{t('all')}</option>
+                    <option value="available">{t('usable')}</option>
+                    <option value="used">{t('exhausted')}</option>
+                    <option value="revoked">{t('revoked')}</option>
                   </select>
                 </div>
                 <div className="space-y-1.5 flex-1 min-w-48">
-                  <Label className="text-xs text-[#9a9eab]">Tìm mã</Label>
+                  <Label className="text-xs text-[#9a9eab]">{t('findCode')}</Label>
                   <Input value={codeSearch} onChange={(e) => setCodeSearch(e.target.value)} placeholder="KOVIO-..." />
                 </div>
                 <Button variant="outline" onClick={loadCodes} className="h-10 rounded-xl border-white/20 text-[#c5c2ba]">
                   <RefreshCw className="w-4 h-4 mr-2" />
-                  Tải lại
+                  {t('reload')}
                 </Button>
               </div>
 
@@ -860,14 +1052,14 @@ export default function AdminLicensePage() {
                 <table className="w-full text-sm">
                   <thead className="bg-white/5 text-[#9a9eab] text-xs uppercase tracking-wider">
                     <tr>
-                      <th className="text-left px-4 py-3">Mã</th>
-                      <th className="text-left px-4 py-3">Gói</th>
-                      <th className="text-left px-4 py-3">Thời hạn</th>
-                      <th className="text-left px-4 py-3">Lượt</th>
-                      <th className="text-left px-4 py-3">Lô</th>
-                      <th className="text-left px-4 py-3">Tiền / Ref</th>
-                      <th className="text-left px-4 py-3">Đã gửi</th>
-                      <th className="text-left px-4 py-3">Trạng thái</th>
+                      <th className="text-left px-4 py-3">{t('codeCol')}</th>
+                      <th className="text-left px-4 py-3">{t('planCol')}</th>
+                      <th className="text-left px-4 py-3">{t('validity')}</th>
+                      <th className="text-left px-4 py-3">{t('uses')}</th>
+                      <th className="text-left px-4 py-3">{t('batchLabel')}</th>
+                      <th className="text-left px-4 py-3">{t('amountRef')}</th>
+                      <th className="text-left px-4 py-3">{t('sent')}</th>
+                      <th className="text-left px-4 py-3">{t('status')}</th>
                       <th className="px-4 py-3" />
                     </tr>
                   </thead>
@@ -875,7 +1067,7 @@ export default function AdminLicensePage() {
                     {codes.length === 0 && (
                       <tr>
                         <td colSpan={9} className="px-4 py-8 text-center text-[#9a9eab]">
-                          Chưa có mã nào.
+                          {t('noCodes')}
                         </td>
                       </tr>
                     )}
@@ -883,25 +1075,25 @@ export default function AdminLicensePage() {
                       const exhausted = c.used_count >= c.max_uses
                       const stale = !!c.expires_at && new Date(c.expires_at) < new Date()
                       const status = c.revoked_at
-                        ? { label: 'Đã thu hồi', cls: 'text-rose-400' }
+                        ? { label: t('revoked'), cls: 'text-rose-400' }
                         : exhausted
-                          ? { label: 'Hết lượt', cls: 'text-[#9a9eab]' }
+                          ? { label: t('outOfUses'), cls: 'text-[#9a9eab]' }
                           : stale
-                            ? { label: 'Quá hạn', cls: 'text-amber-400' }
-                            : { label: 'Còn dùng', cls: 'text-emerald-400' }
+                            ? { label: t('pastDue'), cls: 'text-amber-400' }
+                            : { label: t('stillUsable'), cls: 'text-emerald-400' }
                       return (
                         <tr key={c.code} className="border-t border-white/5">
                           <td className="px-4 py-3 font-mono text-[#f2f0eb] whitespace-nowrap">{c.code}</td>
                           <td className="px-4 py-3 text-[#c5c2ba]">{c.plan_id}</td>
                           <td className="px-4 py-3 text-[#c5c2ba] whitespace-nowrap">
-                            {c.duration_days === 0 ? 'Vĩnh viễn' : c.duration_days + ' ngày'}
+                            {c.duration_days === 0 ? t('lifetime') : t('daysSuffix', { n: c.duration_days })}
                           </td>
                           <td className="px-4 py-3 text-[#c5c2ba] whitespace-nowrap">
                             {c.used_count} / {c.max_uses}
                           </td>
                           <td className="px-4 py-3 text-[#9a9eab]">{c.batch || '-'}</td>
                           <td className="px-4 py-3 text-[#c5c2ba] whitespace-nowrap">
-                            {c.amount_vnd ? formatVnd(c.amount_vnd) : '-'}
+                            {c.amount_vnd ? formatVnd(c.amount_vnd, locale) : '-'}
                             {c.external_ref && (
                               <div className="text-xs text-[#9a9eab]">{c.external_ref}</div>
                             )}
@@ -922,7 +1114,7 @@ export default function AdminLicensePage() {
                                 variant="outline"
                                 onClick={() => copyText(c.code, c.code)}
                                 className="h-9 px-3 rounded-lg border-white/20 text-[#c5c2ba]"
-                                aria-label={'Copy ' + c.code}
+                                aria-label={t('copyAria', { code: c.code })}
                               >
                                 <Copy className="w-4 h-4" />
                               </Button>
@@ -932,9 +1124,25 @@ export default function AdminLicensePage() {
                                   disabled={busyKey === 'revoke-' + c.code}
                                   onClick={() => revokeCode(c.code)}
                                   className="h-9 px-3 rounded-lg border-rose-500/40 text-rose-400 hover:bg-rose-500/10"
-                                  aria-label={'Thu hồi ' + c.code}
+                                  aria-label={t('revokeAria', { code: c.code })}
+                                  title={t('revokeTitle')}
                                 >
                                   <Ban className="w-4 h-4" />
+                                </Button>
+                              )}
+                              {/* Gated on used_count, not on revoked_at: a code
+                                  nobody redeemed has nothing to take back, and an
+                                  already-revoked one still might. */}
+                              {c.used_count > 0 && (
+                                <Button
+                                  variant="outline"
+                                  disabled={busyKey === 'clawback-' + c.code}
+                                  onClick={() => clawBackCode(c.code, c.used_count)}
+                                  className="h-9 px-3 rounded-lg border-rose-500/60 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
+                                  aria-label={t('clawBackAria', { code: c.code })}
+                                  title={t('clawBackTitle')}
+                                >
+                                  <Undo2 className="w-4 h-4" />
                                 </Button>
                               )}
                             </div>
@@ -946,10 +1154,7 @@ export default function AdminLicensePage() {
                 </table>
               </div>
 
-              <p className="text-xs text-[#9a9eab]">
-                Thu hồi chỉ chặn lượt dùng mới. Ai đã kích hoạt bằng mã đó vẫn giữ gói — hạ gói của họ ở tab User
-                licenses.
-              </p>
+              <p className="text-xs text-[#9a9eab]">{t('revokeNote')}</p>
             </section>
           )}
 
@@ -957,50 +1162,50 @@ export default function AdminLicensePage() {
             <section className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-[10px] uppercase tracking-widest text-[#9a9eab]">Lượt cấp gói</div>
+                  <div className="text-[10px] uppercase tracking-widest text-[#9a9eab]">{t('grants')}</div>
                   <div className="text-2xl font-black text-[#f2f0eb] mt-1">{summary.grants}</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-[10px] uppercase tracking-widest text-[#9a9eab]">Có ghi tiền</div>
+                  <div className="text-[10px] uppercase tracking-widest text-[#9a9eab]">{t('withAmount')}</div>
                   <div className="text-2xl font-black text-[#f2f0eb] mt-1">{summary.paid_grants}</div>
                 </div>
                 <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-                  <div className="text-[10px] uppercase tracking-widest text-emerald-300/80">Tổng đã ghi nhận</div>
-                  <div className="text-2xl font-black text-emerald-300 mt-1">{formatVnd(summary.total_vnd)}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-emerald-300/80">{t('totalRecorded')}</div>
+                  <div className="text-2xl font-black text-emerald-300 mt-1">{formatVnd(summary.total_vnd, locale)}</div>
                 </div>
               </div>
 
               <p className="text-xs text-[#9a9eab] rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                Đây là số <strong className="text-[#c5c2ba]">hệ thống ghi nhận</strong>, không phải số ngân hàng nhận được.
-                Thanh toán đi qua trung gian, không chạy trên app. Đối chiếu cột này với sao kê — lệch nhau
-                chính là thứ cần tìm.
+                {t.rich('recordedNoteFull', {
+                  b: (c) => <strong className="text-[#c5c2ba]">{c}</strong>,
+                })}
               </p>
 
               <div className="flex flex-wrap gap-2 items-end">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-[#9a9eab]">Từ ngày</Label>
+                  <Label className="text-xs text-[#9a9eab]">{t('fromDate')}</Label>
                   <Input type="date" value={histFrom} onChange={(e) => setHistFrom(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-[#9a9eab]">Đến ngày</Label>
+                  <Label className="text-xs text-[#9a9eab]">{t('toDate')}</Label>
                   <Input type="date" value={histTo} onChange={(e) => setHistTo(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-[#9a9eab]">Hành động</Label>
+                  <Label className="text-xs text-[#9a9eab]">{t('action')}</Label>
                   <select
                     value={histAction}
                     onChange={(e) => setHistAction(e.target.value)}
                     className="h-10 rounded-xl bg-black/40 border border-white/10 px-3 text-sm text-[#f2f0eb]"
                   >
-                    <option value="">Tất cả</option>
-                    <option value="grant">Cấp mới</option>
-                    <option value="renew">Gia hạn</option>
-                    <option value="downgrade">Ngắt</option>
-                    <option value="expire">Hết hạn</option>
+                    <option value="">{t('all')}</option>
+                    <option value="grant">{t('grant')}</option>
+                    <option value="renew">{t('renew')}</option>
+                    <option value="downgrade">{t('downgrade')}</option>
+                    <option value="expire">{t('expire')}</option>
                   </select>
                 </div>
                 <div className="space-y-1.5 flex-1 min-w-48">
-                  <Label className="text-xs text-[#9a9eab]">Email</Label>
+                  <Label className="text-xs text-[#9a9eab]">{t('email')}</Label>
                   <Input value={histEmail} onChange={(e) => setHistEmail(e.target.value)} placeholder="buyer@..." />
                 </div>
                 <Button variant="outline" onClick={loadHistory} className="h-10 rounded-xl border-white/20 text-[#c5c2ba]">
@@ -1013,7 +1218,7 @@ export default function AdminLicensePage() {
                   className="h-10 rounded-xl bg-[#e85d4c] hover:bg-[#d14e3e] text-white font-bold border-none"
                 >
                   <Download className="w-4 h-4 mr-2" />
-                  {busyKey === 'export' ? 'Đang xuất…' : 'Xuất CSV'}
+                  {busyKey === 'export' ? t('exporting') : t('exportCsv')}
                 </Button>
               </div>
 
@@ -1021,36 +1226,36 @@ export default function AdminLicensePage() {
                 <table className="w-full text-sm">
                   <thead className="bg-white/5 text-[#9a9eab] text-xs uppercase tracking-wider">
                     <tr>
-                      <th className="text-left px-4 py-3">Thời điểm</th>
-                      <th className="text-left px-4 py-3">Người dùng</th>
-                      <th className="text-left px-4 py-3">Hành động</th>
-                      <th className="text-left px-4 py-3">Nguồn</th>
-                      <th className="text-left px-4 py-3">Gói</th>
-                      <th className="text-left px-4 py-3">Hết hạn</th>
-                      <th className="text-right px-4 py-3">Số tiền</th>
-                      <th className="text-left px-4 py-3">Tham chiếu</th>
+                      <th className="text-left px-4 py-3">{t('time')}</th>
+                      <th className="text-left px-4 py-3">{t('person')}</th>
+                      <th className="text-left px-4 py-3">{t('action')}</th>
+                      <th className="text-left px-4 py-3">{t('source')}</th>
+                      <th className="text-left px-4 py-3">{t('planCol')}</th>
+                      <th className="text-left px-4 py-3">{t('expiresCol')}</th>
+                      <th className="text-right px-4 py-3">{t('amount')}</th>
+                      <th className="text-left px-4 py-3">{t('reference')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {events.length === 0 && (
                       <tr>
                         <td colSpan={8} className="px-4 py-8 text-center text-[#9a9eab]">
-                          Không có bản ghi nào trong khoảng này.
+                          {t('noRecords')}
                         </td>
                       </tr>
                     )}
                     {events.map((e) => (
                       <tr key={e.id} className="border-t border-white/5">
-                        <td className="px-4 py-3 text-[#9a9eab] whitespace-nowrap">{formatDateTime(e.created_at)}</td>
+                        <td className="px-4 py-3 text-[#9a9eab] whitespace-nowrap">{formatDateTime(e.created_at, locale)}</td>
                         <td className="px-4 py-3 text-[#f2f0eb]">
                           {e.email || `#${e.user_id}`}
                           {e.note && <div className="text-xs text-[#9a9eab]">{e.note}</div>}
                         </td>
-                        <td className={'px-4 py-3 font-semibold whitespace-nowrap ' + actionStyle(e.action).cls}>
-                          {actionStyle(e.action).label}
+                        <td className={'px-4 py-3 font-semibold whitespace-nowrap ' + actionStyle(e.action, t).cls}>
+                          {actionStyle(e.action, t).label}
                         </td>
                         <td className="px-4 py-3 text-[#9a9eab] whitespace-nowrap">
-                          {sourceLabel(e.source)}
+                          {sourceLabel(e.source, t)}
                           {e.source_ref && <div className="font-mono text-xs">{e.source_ref}</div>}
                         </td>
                         <td className="px-4 py-3 text-[#c5c2ba] whitespace-nowrap">
@@ -1064,11 +1269,11 @@ export default function AdminLicensePage() {
                           {e.action === 'expire' || e.action === 'downgrade'
                             ? '—'
                             : e.ends_at
-                              ? formatDate(e.ends_at)
-                              : 'Vĩnh viễn'}
+                              ? formatDate(e.ends_at, locale)
+                              : t('lifetime')}
                         </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap font-mono text-[#f2f0eb]">
-                          {e.amount_vnd ? formatVnd(e.amount_vnd) : '-'}
+                          {e.amount_vnd ? formatVnd(e.amount_vnd, locale) : '-'}
                         </td>
                         <td className="px-4 py-3 text-[#9a9eab] whitespace-nowrap">{e.external_ref || '-'}</td>
                       </tr>
@@ -1078,7 +1283,7 @@ export default function AdminLicensePage() {
               </div>
 
               <p className="text-xs text-[#9a9eab]">
-                Bảng này chỉ ghi thêm, không sửa. Một lần sửa sai là một dòng mới, không phải đè lên dòng cũ.
+                {t('appendOnlyNote')}
               </p>
             </section>
           )}

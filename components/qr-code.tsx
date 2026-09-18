@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { generateQRCode } from '@/lib/qr-code'
 import { cn } from '@/lib/utils'
 
@@ -10,7 +11,9 @@ interface QRCodeComponentProps {
   className?: string
 }
 
-export function QRCodeComponent({ value, size = 200, className }: QRCodeComponentProps) {
+export function QRCodeComponent(
+{ value, size = 200, className }: QRCodeComponentProps) {
+  const t = useTranslations('qr')
   const [qrCode, setQrCode] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
@@ -21,7 +24,7 @@ export function QRCodeComponent({ value, size = 200, className }: QRCodeComponen
         const code = await generateQRCode(value)
         setQrCode(code)
       } catch (err) {
-        setError('Failed to generate QR code')
+        setError(t('generateFailed'))
       } finally {
         setLoading(false)
       }
@@ -36,7 +39,7 @@ export function QRCodeComponent({ value, size = 200, className }: QRCodeComponen
         className={cn('flex items-center justify-center aspect-square w-full', className)}
         style={{ maxWidth: size }}
       >
-        <div className="text-muted-foreground">Generating...</div>
+        <div className="text-muted-foreground">{t('generating')}</div>
       </div>
     )
   }
@@ -54,7 +57,15 @@ export function QRCodeComponent({ value, size = 200, className }: QRCodeComponen
 
   return (
     <div className={cn('flex items-center justify-center bg-white p-3 sm:p-4 rounded-lg', className)}>
-      <img src={qrCode} alt="QR Code" className="w-full h-auto" style={{ maxWidth: size }} />
+      <img
+        src={qrCode}
+        // Stable hook for the download button on the QR page: alt text is
+        // translated, so it cannot be used as a selector.
+        data-qr-image
+        alt={t('title')}
+        className="w-full h-auto"
+        style={{ maxWidth: size }}
+      />
     </div>
   )
 }

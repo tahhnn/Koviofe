@@ -1,141 +1,211 @@
+/**
+ * Resolving an API error and rendering it are two different jobs, so this
+ * module does the first one only: it matches the raw message against a rule
+ * and returns catalog *keys*. The strings themselves live in
+ * messages/{vi,en}.json under `apiErrors`, because this module is imported by
+ * both client components and a toast provider — none of which share a place to
+ * call a hook. Callers hand their `t` to localizeApiError() at render time.
+ */
 export type ResolvedApiError = {
+  titleKey: string
+  descriptionKey: string
+  /** Interpolation for descriptionKey — only the generic fallback uses it. */
+  values?: Record<string, string>
+  href?: string
+  hrefLabelKey?: string
+  secondaryHref?: string
+  secondaryHrefLabelKey?: string
+  /** When true, UI must send the user to login (not just show a toast). */
+  requiresLogin?: boolean
+  /** When true, the page is stale against the running build and must reload. */
+  requiresReload?: boolean
+}
+
+/** The shape a screen actually renders, once a translator has been applied. */
+export type LocalizedApiError = {
   title: string
   description: string
   href?: string
   hrefLabel?: string
   secondaryHref?: string
   secondaryHrefLabel?: string
-  /** When true, UI must send the user to login (not just show a toast). */
   requiresLogin?: boolean
+  requiresReload?: boolean
 }
+
+/** `useTranslations('apiErrors')` / `getTranslations('apiErrors')`. */
+export type ApiErrorTranslator = (key: string, values?: Record<string, string>) => string
 
 type ErrorRule = {
   test: (msg: string) => boolean
   resolve: (raw: string) => ResolvedApiError
 }
 
+// Every pattern below must match BOTH languages. The API's Localize()
+// middleware (backend internal/middleware/i18n.go) rewrites the `error` field
+// of 4xx/5xx responses into Vietnamese whenever the request carries
+// X-Locale: vi — which every request from this app does, since vi is the
+// default locale. English-only patterns therefore matched nothing for real
+// users: a duplicate nickname fell through to the generic "Đã xảy ra lỗi…"
+// card with a Dashboard link instead of "chọn tên khác". The Vietnamese halves
+// are the exact strings from the backend's catalog.go; changing one there
+// without changing it here silently drops the rule back to the fallback.
 const AUTH_PATTERNS =
-  /UNAUTHORIZED_OR_FORBIDDEN|invalid or expired token|authorization header|authentication required|unauthorized/i
+  /UNAUTHORIZED_OR_FORBIDDEN|invalid or expired token|authorization header|authentication required|unauthorized|phiên đăng nhập không hợp lệ|header authorization không hợp lệ|cần đăng nhập|bạn không có quyền thực hiện/i
+
+// A tab left open across a deploy keeps calling Server Action ids the new
+// build no longer has. It is not the user's problem and it is not worth a
+// stack trace on their screen — it just needs a reload.
+const STALE_DEPLOYMENT_PATTERN =
+  /server action|failed to find server action|might be from an older or newer deployment/i
+
+export function isStaleDeploymentError(raw: unknown): boolean {
+  return STALE_DEPLOYMENT_PATTERN.test(normalizeErrorMessage(raw))
+}
 
 const rules: ErrorRule[] = [
   {
-    test: (m) => /do not own this room/i.test(m),
+    // Next.js replaces any error thrown out of a Server Action with this
+    // paragraph in a production build. It used to reach the screen verbatim.
+    // The paths where the specific reason actually matters (joining a room,
+    // loading the next question) now return their failure as data instead of
+    // throwing; this rule is the floor for everything else, so the worst a
+    // user sees is a sentence they can act on.
+    test: (m) =>
+      /an error occurred in the server components render|digest property is included|omitted in production builds/i.test(m),
     resolve: () => ({
-      title: 'Bạn không phải chủ phòng này',
-      description:
-        'Link phòng thuộc tài khoản khác, hoặc bạn đang đăng nhập sai tài khoản. Tạo phòng mới từ Dashboard, hoặc Join bằng PIN nếu bạn là người chơi.',
+      titleKey: 'serverErrorTitle',
+      descriptionKey: 'serverErrorBody',
       href: '/dashboard',
-      hrefLabel: 'Về Dashboard',
+      hrefLabelKey: 'toDashboard',
+    }),
+  },
+  {
+    test: (m) => STALE_DEPLOYMENT_PATTERN.test(m),
+    resolve: () => ({
+      titleKey: 'staleBuildTitle',
+      descriptionKey: 'staleBuildBody',
+      requiresReload: true,
+    }),
+  },
+  {
+    test: (m) => /do not own this room|bạn không phải chủ phòng này/i.test(m),
+    resolve: () => ({
+      titleKey: 'notOwnerTitle',
+      descriptionKey: 'notOwnerBody',
+      href: '/dashboard',
+      hrefLabelKey: 'toDashboard',
       secondaryHref: '/join',
-      secondaryHrefLabel: 'Join bằng PIN',
+      secondaryHrefLabelKey: 'joinByPin',
     }),
   },
   {
     test: (m) => AUTH_PATTERNS.test(m),
     resolve: () => ({
-      title: 'Phiên đăng nhập đã hết hạn',
-      description: 'Đang chuyển đến trang đăng nhập…',
+      titleKey: 'sessionExpiredTitle',
+      descriptionKey: 'redirectingToSignIn',
       href: '/sign-in',
-      hrefLabel: 'Đăng nhập lại',
+      hrefLabelKey: 'signInAgain',
       requiresLogin: true,
     }),
   },
   {
-    test: (m) => /room not found or invalid pin|no room found|invalid pin/i.test(m),
+    test: (m) => /room not found or invalid pin|no room found|invalid pin|không tìm thấy phòng hoặc mã pin|mã pin không đúng định dạng/i.test(m),
     resolve: () => ({
-      title: 'Không tìm thấy phòng',
-      description: 'Kiểm tra lại mã PIN 6 số, hoặc hỏi host mã mới. Phòng có thể đã đóng.',
+      titleKey: 'pinNotFoundTitle',
+      descriptionKey: 'pinNotFoundBody',
       href: '/join',
-      hrefLabel: 'Thử Join lại',
+      hrefLabelKey: 'tryJoinAgain',
     }),
   },
   {
-    test: (m) => /room not found/i.test(m),
+    test: (m) => /room not found|không tìm thấy phòng/i.test(m),
     resolve: () => ({
-      title: 'Phòng không tồn tại',
-      description: 'Phòng có thể đã kết thúc hoặc link không còn hợp lệ. Về Dashboard để tạo phòng mới.',
+      titleKey: 'roomGoneTitle',
+      descriptionKey: 'roomGoneBody',
       href: '/dashboard',
-      hrefLabel: 'Về Dashboard',
+      hrefLabelKey: 'toDashboard',
     }),
   },
   {
-    test: (m) => /nickname is already taken/i.test(m),
+    test: (m) => /nickname is already taken|biệt danh này đã có người dùng/i.test(m),
     resolve: () => ({
-      title: 'Nickname đã được dùng',
-      description: 'Chọn một nickname khác rồi thử Join lại.',
+      // Wording matches the form's own label ("Biệt danh"), so the player is
+      // told which field to change rather than which API rejected them.
+      titleKey: 'nicknameTakenTitle',
+      descriptionKey: 'nicknameTakenBody',
       href: '/join',
-      hrefLabel: 'Thử lại',
+      hrefLabelKey: 'tryAgain',
     }),
   },
   {
-    test: (m) => /room is full|max .*players|capacity/i.test(m),
+    test: (m) => /room is full|max .*players|capacity|phòng đã đầy/i.test(m),
     resolve: () => ({
-      title: 'Phòng đã đầy',
-      description: 'Đợi người chơi khác rời phòng, hoặc Join phòng công khai khác.',
+      titleKey: 'roomFullTitle',
+      descriptionKey: 'roomFullBody',
       href: '/join',
-      hrefLabel: 'Xem phòng mở',
+      hrefLabelKey: 'openRooms',
     }),
   },
   {
-    test: (m) => /concurrent room limit/i.test(m),
+    test: (m) => /concurrent room limit|giới hạn phòng đồng thời/i.test(m),
     resolve: () => ({
-      title: 'Đã đạt giới hạn phòng đồng thời',
-      description: 'Kết thúc phòng đang mở (End Game) rồi tạo phòng mới, hoặc nâng cấp gói Pro.',
+      titleKey: 'concurrentLimitTitle',
+      descriptionKey: 'concurrentLimitBody',
       href: '/dashboard',
-      hrefLabel: 'Về Dashboard',
+      hrefLabelKey: 'toDashboard',
     }),
   },
   {
-    test: (m) => /quiz has no questions/i.test(m),
+    test: (m) => /quiz has no questions|quiz chưa có câu hỏi|không có câu hỏi nào/i.test(m),
     resolve: () => ({
-      title: 'Quiz chưa có câu hỏi',
-      description: 'Thêm ít nhất một câu hỏi trong trình chỉnh sửa rồi Launch lại.',
+      titleKey: 'quizEmptyTitle',
+      descriptionKey: 'quizEmptyBody',
     }),
   },
   {
-    test: (m) => m === 'ROOM_FINISHED' || /game already ended|already ended/i.test(m),
+    test: (m) => m === 'ROOM_FINISHED' || /game already ended|already ended|trận đấu đã kết thúc|phòng đã kết thúc/i.test(m),
     resolve: () => ({
-      title: 'Trận đấu đã kết thúc',
-      description: 'Bạn có thể xem bảng xếp hạng hoặc về Dashboard để tạo trận mới.',
+      titleKey: 'gameEndedTitle',
+      descriptionKey: 'gameEndedBody',
       href: '/dashboard',
-      hrefLabel: 'Về Dashboard',
+      hrefLabelKey: 'toDashboard',
     }),
   },
   {
-    test: (m) => /joining is closed|already in progress/i.test(m),
+    test: (m) => /joining is closed|already in progress|phòng chưa bắt đầu|đang diễn ra/i.test(m),
     resolve: () => ({
-      title: 'Không thể vào phòng',
-      description: 'Game đã bắt đầu, host đã đóng cửa Join. Đợi trận sau hoặc hỏi host mở phòng mới.',
+      titleKey: 'joinClosedTitle',
+      descriptionKey: 'joinClosedBody',
       href: '/join',
-      hrefLabel: 'Chọn phòng khác',
+      hrefLabelKey: 'otherRoom',
     }),
   },
   {
-    test: (m) => /token room mismatch/i.test(m),
+    test: (m) => /token room mismatch|token không khớp với phòng/i.test(m),
     resolve: () => ({
-      title: 'Phiên chơi không khớp phòng',
-      description: 'Token người chơi thuộc phòng khác. Join lại bằng đúng PIN của phòng hiện tại.',
+      titleKey: 'tokenMismatchTitle',
+      descriptionKey: 'tokenMismatchBody',
       href: '/join',
-      hrefLabel: 'Join lại',
+      hrefLabelKey: 'rejoin',
     }),
   },
   {
-    test: (m) => /player token|x-player-token/i.test(m),
+    test: (m) => /player token|x-player-token|phiên người chơi không hợp lệ|thiếu header x-player-token/i.test(m),
     resolve: () => ({
-      title: 'Phiên người chơi không hợp lệ',
-      description: 'Token hết hạn hoặc thiếu. Vào lại phòng bằng mã PIN.',
+      titleKey: 'playerSessionTitle',
+      descriptionKey: 'playerSessionBody',
       href: '/join',
-      hrefLabel: 'Join lại',
+      hrefLabelKey: 'rejoin',
     }),
   },
   {
-    test: (m) => /forbidden|insufficient/i.test(m),
+    test: (m) => /forbidden|insufficient|không đủ quyền/i.test(m),
     resolve: () => ({
-      title: 'Không đủ quyền',
-      description:
-        'Tài khoản hiện tại không được phép thực hiện thao tác này. Đăng nhập đúng tài khoản hoặc về Dashboard.',
+      titleKey: 'forbiddenTitle',
+      descriptionKey: 'forbiddenBody',
       href: '/dashboard',
-      hrefLabel: 'Về Dashboard',
+      hrefLabelKey: 'toDashboard',
     }),
   },
 ]
@@ -165,16 +235,41 @@ export function resolveApiError(raw: unknown): ResolvedApiError {
     }
   }
 
+  // Strip the "Read more: <url>" tails frameworks append — a player reading a
+  // projector screen has no use for a docs link, and it pushed the actionable
+  // half of the sentence off the line.
+  const readable = normalized.replace(/\s*Read more:\s*\S+/gi, '').trim().replace(/\.$/, '')
+
   return {
-    title: 'Đã xảy ra lỗi',
-    description: `${normalized}. Thử lại, hoặc về Dashboard nếu vấn đề vẫn tiếp diễn.`,
+    titleKey: 'genericTitle',
+    descriptionKey: 'genericBody',
+    values: { reason: readable },
     href: '/dashboard',
-    hrefLabel: 'Về Dashboard',
+    hrefLabelKey: 'toDashboard',
+  }
+}
+
+/** Turns a resolved error into the strings a screen renders. */
+export function localizeApiError(
+  resolved: ResolvedApiError,
+  t: ApiErrorTranslator
+): LocalizedApiError {
+  return {
+    title: t(resolved.titleKey),
+    description: t(resolved.descriptionKey, resolved.values),
+    href: resolved.href,
+    hrefLabel: resolved.hrefLabelKey ? t(resolved.hrefLabelKey) : undefined,
+    secondaryHref: resolved.secondaryHref,
+    secondaryHrefLabel: resolved.secondaryHrefLabelKey
+      ? t(resolved.secondaryHrefLabelKey)
+      : undefined,
+    requiresLogin: resolved.requiresLogin,
+    requiresReload: resolved.requiresReload,
   }
 }
 
 /** Format for inline error text (join form, etc.) */
-export function formatApiErrorInline(raw: unknown): string {
-  const resolved = resolveApiError(raw)
-  return `${resolved.title}. ${resolved.description}`
+export function formatApiErrorInline(raw: unknown, t: ApiErrorTranslator): string {
+  const { title, description } = localizeApiError(resolveApiError(raw), t)
+  return `${title}. ${description}`
 }

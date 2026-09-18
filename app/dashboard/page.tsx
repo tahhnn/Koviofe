@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useFormatter, useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -33,13 +34,20 @@ import {
   X,
 } from 'lucide-react'
 import { BrandMark } from '@/components/brand-mark'
+import { LanguageSwitcher } from '@/components/language-switcher'
 import { LicenseLockedBanner } from '@/components/license-locked-banner'
+import { LicenseExpiringBanner } from '@/components/license-expiring-banner'
 import { getMyLicense, type LicenseSnapshot } from '@/app/actions/license'
-import { isLicenseLocked } from '@/lib/license'
+import { isLicenseExpiringSoon, isLicenseLocked } from '@/lib/license'
 import { TourButton } from '@/components/tour-button'
 import { dashboardTour } from '@/lib/tours'
 
 export default function DashboardPage() {
+  const t = useTranslations('dashboard')
+  const format = useFormatter()
+  const tCommon = useTranslations('common')
+  const tAdmin = useTranslations('admin')
+  const tTour = useTranslations('tours')
   const router = useRouter()
   const toast = useToast()
   const [user, setUser] = useState<any>(null)
@@ -67,7 +75,7 @@ export default function DashboardPage() {
 
   const handleSaveQuizInfo = async () => {
     if (!editQuizTitle.trim()) {
-      toast.error('Lỗi', 'Tên quiz không được để trống.')
+      toast.error(t('error'), t('titleRequired'))
       return
     }
     setActionLoading(`edit-${selectedQuizId}`)
@@ -81,10 +89,10 @@ export default function DashboardPage() {
         )
       )
       setEditQuizOpen(false)
-      toast.success('Đã cập nhật thông tin quiz thành công!')
+      toast.success(t('updated'))
     } catch (error) {
       console.error('Error updating quiz info:', error)
-      toast.error('Lỗi', 'Không thể cập nhật thông tin quiz.')
+      toast.error(t('error'), t('updateFailed'))
     } finally {
       setActionLoading(null)
     }
@@ -94,7 +102,7 @@ export default function DashboardPage() {
     setQuickCreating(theme)
     try {
       const newQuiz = await createQuizFromMockTemplate(theme)
-      toast.success('Đã tạo nhanh Quiz', 'Đang chuyển hướng...')
+      toast.success(t('quickCreated'), t('redirecting'))
       router.push(`/quizzes/${newQuiz.id}`)
     } catch (error) {
       console.error('Error creating quick quiz:', error)
@@ -106,7 +114,7 @@ export default function DashboardPage() {
 
   const handleDeleteQuiz = (quizId: string) => {
     toast.confirm(
-      'Xác nhận xóa Quiz',
+      t('confirmDeleteBody'),
       async () => {
         try {
           await deleteQuiz(quizId)
@@ -115,13 +123,13 @@ export default function DashboardPage() {
             ...prev,
             totalQuizzes: prev.totalQuizzes - 1,
           }))
-          toast.success('Đã xóa Quiz thành công!')
+          toast.success(t('deleted'))
         } catch (error) {
           console.error('Error deleting quiz:', error)
           toast.apiError(error, (href) => router.push(href))
         }
       },
-      'Hành động này không thể khôi phục. Bạn có chắc chắn muốn xóa Quiz này không?'
+      t('confirmDeleteWarning')
     )
   }
 
@@ -129,7 +137,7 @@ export default function DashboardPage() {
     setActionLoading(`dup-${quizId}`)
     try {
       const copy = await duplicateQuiz(quizId)
-      toast.success('Đã nhân bản quiz', copy.title)
+      toast.success(t('duplicated'), copy.title)
       router.push(`/quizzes/${copy.id}`)
     } catch (error) {
       toast.apiError(error, (href) => router.push(href))
@@ -187,7 +195,7 @@ export default function DashboardPage() {
     setCreating(true)
     try {
       const newQuiz = await createQuiz('New Quiz', 'Click to edit description')
-      toast.success('Đã tạo Quiz mới', 'Đang chuyển hướng đến trình thiết kế...')
+      toast.success(t('created'), t('redirectingEditor'))
       router.push(`/quizzes/${newQuiz.id}`)
     } catch (error: any) {
       console.error('Error creating quiz:', error)
@@ -208,7 +216,7 @@ export default function DashboardPage() {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center z-10 space-y-4">
             <Hourglass className="w-12 h-12 text-indigo-400 animate-spin mx-auto mb-4" />
-            <p className="text-gray-400 text-sm tracking-wider uppercase font-bold">Loading dashboard...</p>
+            <p className="text-gray-400 text-sm tracking-wider uppercase font-bold">{t('loading')}</p>
           </div>
         </div>
       </GameBackground>
@@ -224,13 +232,14 @@ export default function DashboardPage() {
         <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap gap-y-2 items-center justify-between">
           <BrandMark />
           <div className="flex flex-wrap justify-end items-center gap-2 sm:gap-4">
+            <LanguageSwitcher />
             {user?.role === 'admin' && (
               <Link href="/admin">
                 <Button
                   variant="ghost"
                   className="text-[#e85d4c] hover:text-[#f2f0eb] hover:bg-[#e85d4c]/10 h-11 sm:h-9 rounded-xl font-medium text-xs border-none"
                 >
-                  Admin Console
+                  {tAdmin('console')}
                 </Button>
               </Link>
             )}
@@ -239,7 +248,7 @@ export default function DashboardPage() {
                 variant="ghost"
                 className="text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-white/5 h-11 sm:h-9 rounded-xl font-medium text-xs border-none"
               >
-                Settings
+                {tCommon('settings')}
               </Button>
             </Link>
             <div className="flex items-center gap-3">
@@ -254,7 +263,7 @@ export default function DashboardPage() {
               className="border-[#2c313d] hover:bg-white/5 text-[#9a9eab] hover:text-[#f2f0eb] h-11 sm:h-9 rounded-xl transition-all flex items-center gap-1.5"
             >
               <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Sign out</span>
+              <span className="hidden sm:inline">{tCommon('signOut')}</span>
             </Button>
           </div>
         </div>
@@ -266,13 +275,22 @@ export default function DashboardPage() {
           <LicenseLockedBanner onRedeemed={async () => setLicense(await getMyLicense())} />
         )}
 
+        {/* Only when not already locked: a lapsed account gets the stronger
+            banner, and showing both would be two calls to action for one fix. */}
+        {!isLicenseLocked(license) && isLicenseExpiringSoon(license) && (
+          <LicenseExpiringBanner
+            days={license?.days_remaining ?? 0}
+            onRedeemed={async () => setLicense(await getMyLicense())}
+          />
+        )}
+
         {/* Welcome Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-md shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-purple-500 to-indigo-500"></div>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white md:text-4xl">Creator Dashboard</h1>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white md:text-4xl">{t('title')}</h1>
             <p className="text-gray-400 mt-2 text-base max-w-xl">
-              Design custom quizzes, run realtime matches, and keep track of student scores here.
+              {t('subtitle')}
             </p>
           </div>
           <div className="w-full md:w-auto">
@@ -286,12 +304,12 @@ export default function DashboardPage() {
               {creating ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  Creating...
+                  {t('creating')}
                 </span>
               ) : (
                 <>
                   <Plus className="w-5 h-5" />
-                  Create New Quiz
+                  {t('createQuiz')}
                 </>
               )}
             </Button>
@@ -301,10 +319,10 @@ export default function DashboardPage() {
         {/* Stats Grid */}
         <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6" data-tour="stats-grid">
           {[
-            { label: 'Total Quizzes', value: stats.totalQuizzes, icon: FileText, color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
-            { label: 'Battles Hosted', value: stats.totalSessions, icon: Gamepad2, color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
-            { label: 'Players Reached', value: stats.totalPlayers, icon: Users, color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
-            { label: 'Average Accuracy', value: stats.averageScore, icon: Target, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+            { label: t('totalQuizzes'), value: stats.totalQuizzes, icon: FileText, color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
+            { label: t('battlesHosted'), value: stats.totalSessions, icon: Gamepad2, color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+            { label: t('playersReached'), value: stats.totalPlayers, icon: Users, color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
+            { label: t('averageAccuracy'), value: stats.averageScore, icon: Target, color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
           ].map((stat, i) => {
             const Icon = stat.icon
             return (
@@ -334,7 +352,7 @@ export default function DashboardPage() {
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
-                My Quizzes
+                {t('myQuizzes')}
               </button>
               <button
                 onClick={() => setActiveTab('quick-create')}
@@ -345,7 +363,7 @@ export default function DashboardPage() {
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                Starter packs
+                {t('starterPacks')}
               </button>
             </div>
 
@@ -355,7 +373,7 @@ export default function DashboardPage() {
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <Input
                   type="text"
-                  placeholder="Search quizzes by title..."
+                  placeholder={t('searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full bg-black/40 border-white/5 focus:border-indigo-500/50 text-white placeholder-gray-500 pl-10 h-10 rounded-xl text-base sm:text-xs transition-all duration-300"
@@ -380,11 +398,11 @@ export default function DashboardPage() {
                   >
                     <BookOpen className="w-16 h-16 text-indigo-500/40 animate-pulse mx-auto" />
                     <div className="space-y-2">
-                      <h3 className="text-xl font-bold text-white">No quizzes found</h3>
+                      <h3 className="text-xl font-bold text-white">{t('noQuizzes')}</h3>
                       <p className="text-gray-400 text-sm max-w-sm leading-relaxed mx-auto">
                         {searchQuery 
                           ? `No quiz titles match "${searchQuery}". Try a different keyword.`
-                          : 'Start by building your first quiz. You can add customized questions, configure timers, and launch sessions.'
+                          : t('emptyHint')
                         }
                       </p>
                     </div>
@@ -394,7 +412,7 @@ export default function DashboardPage() {
                         size="lg"
                         className="bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold rounded-2xl border-none"
                       >
-                        Create Your First Quiz
+                        {t('createFirst')}
                       </Button>
                     )}
                   </div>
@@ -419,7 +437,7 @@ export default function DashboardPage() {
                         </div>
                         <div 
                           onClick={() => handleOpenEditQuiz(quiz)}
-                          title="Click để sửa nhanh tên và mô tả"
+                          title={t('quickEditHint')}
                           className="cursor-pointer group/info select-none"
                         >
                           <h3 className="text-xl font-bold text-white line-clamp-1 group-hover:text-purple-400 transition-colors flex items-center gap-1.5">
@@ -427,7 +445,7 @@ export default function DashboardPage() {
                             <Edit3 className="w-3.5 h-3.5 text-gray-500 opacity-0 group-hover/info:opacity-100 transition-opacity shrink-0" />
                           </h3>
                           <p className="text-gray-400 text-sm mt-1 line-clamp-2 leading-relaxed group-hover/info:text-gray-300">
-                            {quiz.description || 'No description provided.'}
+                            {quiz.description || t('noDescription')}
                           </p>
                         </div>
                       </div>
@@ -435,7 +453,7 @@ export default function DashboardPage() {
                       <div className="pt-4 border-t border-white/5 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between mt-auto">
                         <span className="text-[11px] text-gray-500 flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          {new Date(quiz.createdAt || Date.now()).toLocaleDateString('vi-VN')}
+                          {format.dateTime(new Date(quiz.createdAt || Date.now()), { dateStyle: 'short' })}
                         </span>
                         <div className="flex gap-2 flex-wrap justify-end">
                           <Button
@@ -444,7 +462,7 @@ export default function DashboardPage() {
                             className="bg-rose-600/10 border border-rose-500/20 hover:bg-rose-600/20 text-rose-400 text-xs font-bold rounded-xl h-10 sm:h-9 px-3 cursor-pointer flex items-center gap-1 border-none"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                            Delete
+                            {t('delete')}
                           </Button>
                           <Button
                             size="sm"
@@ -454,18 +472,18 @@ export default function DashboardPage() {
                             className="border-white/10 hover:bg-white/5 text-xs font-bold text-gray-300 hover:text-white rounded-xl h-10 sm:h-9 flex items-center gap-1"
                           >
                             <Copy className="w-3.5 h-3.5" />
-                            {actionLoading === `dup-${quiz.id}` ? '…' : 'Nhân bản'}
+                            {actionLoading === `dup-${quiz.id}` ? '…' : t('duplicate')}
                           </Button>
                           <Link href={`/quizzes/${quiz.id}`}>
                             <Button size="sm" variant="outline" className="border-white/10 hover:bg-white/5 text-xs font-bold text-gray-300 hover:text-white rounded-xl h-10 sm:h-9 flex items-center gap-1">
                               <Edit3 className="w-3.5 h-3.5" />
-                              Edit
+                              {t('edit')}
                             </Button>
                           </Link>
                           <Link href={`/quizzes/${quiz.id}`} className="block">
                             <Button size="sm" className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md border-none h-10 sm:h-9 flex items-center gap-1">
                               <Play className="w-3.5 h-3.5" />
-                              Launch
+                              {t('launch')}
                             </Button>
                           </Link>
                         </div>
@@ -481,32 +499,32 @@ export default function DashboardPage() {
               {[
                 { 
                   theme: 'math', 
-                  title: 'Math Challenge', 
-                  description: 'Generate a quiz with basic arithmetic, prime numbers, and square roots.', 
+                  title: t('packMath'), 
+                  description: t('packMathBody'), 
                   icon: Calculator, 
                   color: 'from-purple-500/15 to-indigo-500/5 hover:border-purple-500/30 text-purple-400',
                   questionsCount: 3
                 },
                 { 
                   theme: 'science', 
-                  title: 'Science Trivia', 
-                  description: 'Generate a science quiz testing boiling points, solar system basics, and space facts.', 
+                  title: t('packScience'), 
+                  description: t('packScienceBody'), 
                   icon: Atom, 
                   color: 'from-pink-500/15 to-rose-500/5 hover:border-pink-500/30 text-pink-400',
                   questionsCount: 2
                 },
                 { 
                   theme: 'programming', 
-                  title: 'Web Dev Basics', 
-                  description: 'Generate a coding quiz about HTML selectors, CSS styling rules, and basic JavaScript.', 
+                  title: t('packWeb'), 
+                  description: t('packWebBody'), 
                   icon: Code, 
                   color: 'from-blue-500/15 to-cyan-500/5 hover:border-blue-500/30 text-blue-400',
                   questionsCount: 2
                 },
                 { 
                   theme: 'general', 
-                  title: 'General Knowledge', 
-                  description: 'Generate a miscellaneous trivia quiz about capital cities, geographical facts, and culture.', 
+                  title: t('packGeneral'), 
+                  description: t('packGeneralBody'), 
                   icon: Lightbulb, 
                   color: 'from-amber-500/15 to-yellow-500/5 hover:border-amber-500/30 text-amber-400',
                   questionsCount: 1
@@ -546,11 +564,11 @@ export default function DashboardPage() {
                       {isCurrentCreating ? (
                         <>
                           <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
-                          Generating...
+                          {t('generating')}
                         </>
                       ) : (
                         <>
-                          Create Demo Quiz
+                          {t('createDemo')}
                           <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
                         </>
                       )}
@@ -567,7 +585,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-white/10 bg-[#1a1d26] p-4 sm:p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h2 className="text-lg font-bold text-white">Chỉnh sửa thông tin Quiz</h2>
+              <h2 className="text-lg font-bold text-white">{t('editQuizTitle')}</h2>
               <button
                 onClick={() => setEditQuizOpen(false)}
                 className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:text-white transition-colors bg-transparent border-none cursor-pointer"
@@ -578,22 +596,22 @@ export default function DashboardPage() {
 
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Tên Quiz</label>
+                <label className="text-sm font-medium text-gray-300">{t('quizName')}</label>
                 <Input
                   type="text"
                   value={editQuizTitle}
                   onChange={(e) => setEditQuizTitle(e.target.value)}
-                  placeholder="Nhập tên quiz..."
+                  placeholder={t('quizNamePlaceholder')}
                   className="w-full bg-[#12141a] border-white/10 text-white rounded-xl h-10"
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Mô tả</label>
+                <label className="text-sm font-medium text-gray-300">{t('quizDescription')}</label>
                 <textarea
                   value={editQuizDescription}
                   onChange={(e) => setEditQuizDescription(e.target.value)}
-                  placeholder="Nhập mô tả cho quiz này..."
+                  placeholder={t('quizDescPlaceholder')}
                   rows={4}
                   className="w-full bg-[#12141a] border border-white/10 focus:border-purple-500 text-white placeholder:text-gray-500 rounded-xl p-3 focus:outline-none text-sm resize-none"
                 />
@@ -606,14 +624,14 @@ export default function DashboardPage() {
                 onClick={() => setEditQuizOpen(false)}
                 className="h-11 w-full sm:h-10 sm:w-auto border-white/10 bg-transparent text-white hover:bg-white/5 px-4 rounded-xl"
               >
-                Hủy
+                {tCommon('cancel')}
               </Button>
               <Button
                 onClick={handleSaveQuizInfo}
                 disabled={actionLoading === `edit-${selectedQuizId}`}
                 className="h-11 w-full sm:h-10 sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white px-5 rounded-xl border-none"
               >
-                {actionLoading === `edit-${selectedQuizId}` ? 'Đang lưu...' : 'Lưu lại'}
+                {actionLoading === `edit-${selectedQuizId}` ? t('saving') : t('save')}
               </Button>
             </div>
           </div>
@@ -621,7 +639,7 @@ export default function DashboardPage() {
       )}
 
       </div>
-      <TourButton tour={dashboardTour} label="Hướng dẫn" position="bottom-right" />
+      <TourButton tour={dashboardTour(tTour)} label={t('guide')} position="bottom-right" />
     </GameBackground>
   )
 }

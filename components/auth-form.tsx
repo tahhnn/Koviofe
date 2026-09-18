@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
@@ -9,8 +10,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { GameBackground } from '@/components/game-background'
 import { BrandMark } from '@/components/brand-mark'
+import { LanguageSwitcher } from '@/components/language-switcher'
 
 export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
+  const t = useTranslations('auth')
   const router = useRouter()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -53,14 +56,17 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
       <div className="flex-1 flex items-start sm:items-center justify-center px-4 py-8 sm:py-10">
         <div className="w-full max-w-md rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8">
           <div className="mb-8 text-center space-y-2">
+            <div className="flex justify-end">
+              <LanguageSwitcher />
+            </div>
             <BrandMark />
             <h1 className="text-2xl font-semibold text-[#f2f0eb] pt-2">
-              {isSignUp ? 'Create an account' : 'Sign in'}
+              {isSignUp ? t('signUpTitle') : t('signInTitle')}
             </h1>
             <p className="text-sm text-[#9a9eab]">
               {isSignUp
-                ? 'Build quizzes and run live rooms.'
-                : 'Open your dashboard and active rooms.'}
+                ? t('signUpSubtitle')
+                : t('signInSubtitle')}
             </p>
           </div>
 
@@ -68,7 +74,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
             {isSignUp && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="name" className="text-sm text-[#c5c2ba]">
-                  Name
+                  {t('nameLabel')}
                 </Label>
                 <Input
                   id="name"
@@ -76,7 +82,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   required
-                  placeholder="Alex"
+                  placeholder={t('namePlaceholder')}
                   className={fieldClass}
                 />
               </div>
@@ -84,7 +90,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="email" className="text-sm text-[#c5c2ba]">
-                Email
+                {t('emailLabel')}
               </Label>
               <Input
                 id="email"
@@ -93,7 +99,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                placeholder="you@email.com"
+                placeholder={t('emailPlaceholder')}
                 className={fieldClass}
               />
             </div>
@@ -101,7 +107,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
             {!isSignUp && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="password" className="text-sm text-[#c5c2ba]">
-                  Password
+                  {t('passwordLabel')}
                 </Label>
                 <Input
                   id="password"
@@ -136,7 +142,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
           </form>
 
           <p className="text-sm text-[#9a9eab] text-center mt-8 pt-6 border-t border-[#2c313d]">
-            {isSignUp ? 'Already have an account? ' : 'Need an account? '}
+            {isSignUp ? t('haveAccount') + ' ' : t('needAccount') + ' '}
             <Link
               href={isSignUp ? '/sign-in' : '/sign-up'}
               className="text-[#e85d4c] font-medium hover:underline inline-block py-2 px-1"

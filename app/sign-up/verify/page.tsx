@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, Suspense } from 'react'
+import { useTranslations } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { authClient } from '@/lib/auth-client'
@@ -11,6 +12,7 @@ import { Card } from '@/components/ui/card'
 import { GameBackground } from '@/components/game-background'
 
 function VerifyOTPContent() {
+  const t = useTranslations('verify')
   const router = useRouter()
   const searchParams = useSearchParams()
   const emailParam = searchParams.get('email') || ''
@@ -54,7 +56,7 @@ function VerifyOTPContent() {
 
             <div className="mb-6">
               <span className="text-4xl">🎉</span>
-              <h1 className="text-2xl font-black text-white mt-4">Verification Successful!</h1>
+              <h1 className="text-2xl font-black text-white mt-4">{t('successTitle')}</h1>
               <p className="text-sm text-gray-400 mt-2">
                 Your account has been created. A temporary password was sent to{' '}
                 <span className="text-white font-medium break-all">{email}</span>. Check your inbox, then sign in and change your password.
@@ -68,7 +70,7 @@ function VerifyOTPContent() {
               }}
               className="w-full h-12 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold rounded-xl shadow-[0_4px_15px_rgba(16,185,129,0.2)] transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer border-none"
             >
-              Go to Sign In
+              {t('goSignIn')}
             </Button>
           </Card>
         </div>
@@ -89,29 +91,29 @@ function VerifyOTPContent() {
               </span>
             </Link>
             <h1 className="text-2xl font-black text-white">
-              Verify Your Email
+              {t('title')}
             </h1>
             <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-              We have sent a 6-digit verification code to <span className="break-all">{email || 'your email'}</span>.
+              {t('sentTo')} <span className="break-all">{email || 'your email'}</span>.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-gray-400">Email Address</Label>
+              <Label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-gray-400">{t('emailLabel')}</Label>
               <Input
                 id="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="you@email.com"
+                placeholder={t('emailPlaceholder')}
                 className="bg-black/40 border-white/5 focus:border-indigo-500/50 text-white placeholder-gray-600 h-12 rounded-xl transition-all duration-300"
               />
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="otp" className="text-xs font-bold uppercase tracking-wider text-gray-400">Verification Code</Label>
+              <Label htmlFor="otp" className="text-xs font-bold uppercase tracking-wider text-gray-400">{t('codeLabel')}</Label>
               <Input
                 id="otp"
                 type="text"
@@ -121,7 +123,7 @@ function VerifyOTPContent() {
                 value={otp}
                 onChange={(e) => setOtp(e.target.value)}
                 required
-                placeholder="e.g. 123456"
+                placeholder={t('codePlaceholder')}
                 className="bg-black/40 border-white/5 focus:border-indigo-500/50 text-white placeholder-gray-600 h-12 rounded-xl transition-all duration-300 text-center tracking-widest text-lg font-bold"
                 maxLength={6}
               />
@@ -141,7 +143,7 @@ function VerifyOTPContent() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  Verifying...
+                  {t('verifying')}
                 </span>
               ) : (
                 'Verify & Create Account'
@@ -155,7 +157,7 @@ function VerifyOTPContent() {
               href="/sign-up"
               className="text-indigo-400 font-extrabold hover:text-indigo-300 transition-colors underline-offset-4 hover:underline inline-block px-2 py-2"
             >
-              Sign Up
+              {t('submit')}
             </Link>
           </div>
         </Card>

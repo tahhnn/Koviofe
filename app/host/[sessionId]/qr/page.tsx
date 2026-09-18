@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { useParams } from 'next/navigation'
 import { QRCodeComponent } from '@/components/qr-code'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,7 @@ import Link from 'next/link'
 import { getGameSession } from '@/app/actions/quizzes'
 
 export default function QRPage() {
+  const t = useTranslations('qrPage')
   const params = useParams()
   const sessionId = params.sessionId as string
   const [pinCode, setPinCode] = useState<string | null>(null)
@@ -20,13 +22,13 @@ export default function QRPage() {
         const session = await getGameSession(sessionId)
         if (!active) return
         if (!session.sessionCode) {
-          setError('PIN code not found for this room')
+          setError(t('loadFailed'))
           return
         }
         setPinCode(String(session.sessionCode))
       } catch (e: unknown) {
         if (!active) return
-        setError(e instanceof Error ? e.message : 'Failed to load room PIN')
+        setError(e instanceof Error ? e.message : t('loadFailed'))
       }
     })()
     return () => {
@@ -44,8 +46,8 @@ export default function QRPage() {
       <div className="max-w-2xl xl:max-w-4xl w-full">
         <div className="bg-card border border-secondary/30 rounded-3xl p-5 sm:p-8 md:p-12 text-center space-y-8">
           <div>
-            <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold text-foreground mb-2">Join the Game!</h1>
-            <p className="text-muted-foreground text-base md:text-xl">Scan this QR code with your phone</p>
+            <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold text-foreground mb-2">{t('title')}</h1>
+            <p className="text-muted-foreground text-base md:text-xl">{t('scanHint')}</p>
           </div>
 
           {error && (
@@ -53,7 +55,7 @@ export default function QRPage() {
           )}
 
           {!pinCode && !error && (
-            <p className="text-muted-foreground">Loading PIN…</p>
+            <p className="text-muted-foreground">{t('loadingPin')}</p>
           )}
 
           {pinCode && (
@@ -63,20 +65,20 @@ export default function QRPage() {
               </div>
 
               <div className="space-y-2">
-                <p className="text-muted-foreground text-sm">Or enter this code manually:</p>
+                <p className="text-muted-foreground text-sm">{t('manualCode')}</p>
                 <div className="bg-background border-2 border-accent rounded-xl p-4 sm:p-6">
                   <p className="text-4xl sm:text-6xl md:text-7xl xl:text-8xl 2xl:text-9xl font-bold text-accent tracking-[0.15em] break-all leading-none">{pinCode}</p>
                 </div>
-                <p className="text-xs text-muted-foreground">Go to /join and enter the PIN above</p>
+                <p className="text-xs text-muted-foreground">{t('goToJoin')}</p>
               </div>
 
               <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 sm:p-6 text-left space-y-3">
-                <h3 className="font-semibold text-foreground">How to join:</h3>
+                <h3 className="font-semibold text-foreground">{t('howTo')}</h3>
                 <ol className="space-y-2 text-sm xl:text-lg text-muted-foreground list-decimal list-inside">
-                  <li>Open /join on your phone</li>
+                  <li>{t('step1')}</li>
                   <li>Scan this QR code or enter PIN: {pinCode}</li>
-                  <li>Enter your name</li>
-                  <li>Click Join and start playing!</li>
+                  <li>{t('step2')}</li>
+                  <li>{t('step3')}</li>
                 </ol>
               </div>
             </>
@@ -85,13 +87,13 @@ export default function QRPage() {
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link href={`/host/${sessionId}`}>
               <Button size="lg" className="h-12 w-full sm:w-auto bg-primary hover:bg-primary/90 text-white">
-                Back to Host Control
+                {t('backToHost')}
               </Button>
             </Link>
             {pinCode && (
               <Button
                 onClick={() => {
-                  const canvas = document.querySelector('img[alt="QR Code"]') as HTMLImageElement | null
+                  const canvas = document.querySelector('img[data-qr-image]') as HTMLImageElement | null
                   if (canvas) {
                     const link = document.createElement('a')
                     link.href = canvas.src
@@ -103,14 +105,14 @@ export default function QRPage() {
                 variant="outline"
                 className="h-12 w-full sm:w-auto border-secondary text-secondary"
               >
-                Download QR Code
+                {t('download')}
               </Button>
             )}
           </div>
         </div>
 
         <div className="mt-8 text-center text-muted-foreground text-sm">
-          <p>Display this screen on a projector or screen for easy access</p>
+          <p>{t('projectorHint')}</p>
         </div>
       </div>
     </div>

@@ -1,12 +1,14 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Outfit } from 'next/font/google'
+import { Lexend } from 'next/font/google'
+import { NextIntlClientProvider } from 'next-intl'
+import { getLocale } from 'next-intl/server'
 import { ToastProvider } from '@/components/ui/toast'
 import './globals.css'
 
-const outfit = Outfit({
-  subsets: ['latin', 'latin-ext'],
-  variable: '--font-outfit',
+const lexend = Lexend({
+  subsets: ['latin', 'latin-ext', 'vietnamese'],
+  variable: '--font-lexend',
   display: 'swap',
 })
 
@@ -34,17 +36,24 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // Resolved per request from the NEXT_LOCALE cookie, falling back to
+  // Accept-Language (see i18n/request.ts). Also drives <html lang>, which
+  // screen readers and the browser's own translate prompt read.
+  const locale = await getLocale()
+
   return (
-    <html lang="en" className={`${outfit.variable} dark bg-background`} suppressHydrationWarning>
+    <html lang={locale} className={`${lexend.variable} dark bg-background`} suppressHydrationWarning>
       <body className="font-sans antialiased bg-background text-foreground" suppressHydrationWarning>
-        <ToastProvider>
-          {children}
-        </ToastProvider>
+        <NextIntlClientProvider>
+          <ToastProvider>
+            {children}
+          </ToastProvider>
+        </NextIntlClientProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

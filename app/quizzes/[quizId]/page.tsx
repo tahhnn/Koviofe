@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -19,8 +20,11 @@ import {
   deleteAnswerOption,
   createGameSession,
   updateQuizThemeConfig,
+  updateQuestionExplanation,
+  updateQuizExplanationDuration,
   importQuestionsFromQuiz,
 } from '@/app/actions/quizzes'
+import { ExplanationEditor } from '@/components/explanation-editor'
 import { GameBackground } from '@/components/game-background'
 import { useToast } from '@/components/ui/toast'
 import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus, Settings, SlidersHorizontal } from 'lucide-react'
@@ -29,6 +33,9 @@ import { TourButton } from '@/components/tour-button'
 import { quizEditorTour } from '@/lib/tours'
 
 export default function QuizEditorPage() {
+  const t = useTranslations('editor')
+  const tCommon = useTranslations('common')
+  const tTour = useTranslations('tours')
   const params = useParams()
   const router = useRouter()
   const toast = useToast()
@@ -139,10 +146,8 @@ export default function QuizEditorPage() {
     setSaving(true)
     try {
       const newQuestion = await addQuestion(quizId, 'New Question Text', 30)
-      console.log('[handleAddQuestion] newQuestion:', newQuestion)
       // Refetch full quiz to ensure local state matches server and avoids stale UI
       const updatedQuiz = await getQuizById(quizId)
-      console.log('[handleAddQuestion] refetched quiz questions:', updatedQuiz.questions.map((q: any) => ({ id: q.id, text: q.questionText?.slice(0, 30), opts: q.options?.length })))
       setQuiz(updatedQuiz)
       setActiveQuestionId(String(newQuestion.id))
     } catch (error) {
@@ -154,7 +159,7 @@ export default function QuizEditorPage() {
 
   const handleDeleteQuestion = (qId: string) => {
     toast.confirm(
-      'Xóa câu hỏi',
+      t('deleteQuestion'),
       async () => {
         setSaving(true)
         try {
@@ -168,21 +173,21 @@ export default function QuizEditorPage() {
             setActiveQuestionId(updatedQuestions.length > 0 ? updatedQuestions[0].id : null)
           }
           setMobileSettingsOpen(false)
-          toast.success('Đã xóa câu hỏi thành công!')
+          toast.success(t('questionDeleted'))
         } catch (error) {
           console.error('Error deleting question:', error)
-          toast.error('Lỗi khi xóa câu hỏi', 'Không thể hoàn tất thao tác xóa.')
+          toast.error(t('deleteQuestionError'), t('deleteFailed'))
         } finally {
           setSaving(false)
         }
       },
-      'Hành động này không thể khôi phục. Bạn có chắc chắn muốn xóa câu hỏi này không?'
+      t('confirmDeleteQuestionWarning')
     )
   }
 
   const handleSaveQuizSettings = async () => {
     if (!editTitle.trim()) {
-      toast.error('Lỗi', 'Tên quiz không được để trống.')
+      toast.error(t('error'), t('titleRequired'))
       return
     }
     setSaving(true)
@@ -194,10 +199,10 @@ export default function QuizEditorPage() {
         description: editDescription,
       }))
       setQuizSettingsOpen(false)
-      toast.success('Đã cập nhật thông tin quiz thành công!')
+      toast.success(t('quizUpdated'))
     } catch (error) {
       console.error('Error updating quiz settings:', error)
-      toast.error('Lỗi', 'Không thể lưu thông tin quiz.')
+      toast.error(t('error'), t('saveQuizFailed'))
     } finally {
       setSaving(false)
     }
@@ -400,6 +405,47 @@ export default function QuizEditorPage() {
     }
   }
 
+  const explanationDuration = (() => {
+    try {
+      const n = Number(JSON.parse(quiz?.themeConfig || '{}')?.explanation_duration)
+      return Number.isFinite(n) && n > 0 ? n : 10
+    } catch {
+      return 10
+    }
+  })()
+
+  const handleExplanationSave = async (questionId: string, json: string) => {
+    // Optimistic: the editor already renders from its own copy, and a slow PUT
+    // must not make the preview snap back to the previous slide.
+    setQuiz((prev: any) => ({
+      ...prev,
+      questions: prev.questions.map((q: any) =>
+        q.id === questionId ? { ...q, explanation: json } : q
+      ),
+    }))
+    try {
+      await trackSave(updateQuestionExplanation(quizId, questionId, json))
+    } catch (error) {
+      console.error('Error saving explanation:', error)
+      toast.error(t('explanationSaveFailed'), t('saveFailed'))
+    }
+  }
+
+  const handleExplanationDurationChange = async (seconds: number) => {
+    setQuiz((prev: any) => {
+      let config: Record<string, any> = {}
+      try {
+        config = JSON.parse(prev?.themeConfig || '{}') || {}
+      } catch {}
+      return { ...prev, themeConfig: JSON.stringify({ ...config, explanation_duration: seconds }) }
+    })
+    try {
+      await trackSave(updateQuizExplanationDuration(quizId, seconds))
+    } catch (error) {
+      console.error('Error saving explanation duration:', error)
+    }
+  }
+
   const handleStartGame = async (mode: 'classic' | 'solo') => {
     setSaving(true)
     try {
@@ -412,7 +458,19 @@ export default function QuizEditorPage() {
       }
       // License/Pro gating deferred — Solo is open for all hosts for now.
       // See backend/internal/pkg/license/LICENSE_DEFERRED.md
-      const modeConfig = JSON.stringify({ game_mode: mode === 'solo' ? 'player_paced' : 'host_paced' })
+      //
+      // Merge, do not replace. This used to write a fresh object holding only
+      // game_mode, which wiped every other key in theme_config at the moment
+      // the room was created — so a quiz-level setting could never reach a
+      // game. explanation_duration is read from the room's copy of this config.
+      let existingConfig: Record<string, any> = {}
+      try {
+        existingConfig = JSON.parse(quiz?.themeConfig || '{}') || {}
+      } catch {}
+      const modeConfig = JSON.stringify({
+        ...existingConfig,
+        game_mode: mode === 'solo' ? 'player_paced' : 'host_paced',
+      })
       await updateQuizThemeConfig(quizId, modeConfig)
       const session = await createGameSession(quizId)
       router.push(`/host/${session.id}`)
@@ -469,7 +527,7 @@ export default function QuizEditorPage() {
 
   const confirmImport = async () => {
     if (!importSourceId || importSelected.size === 0) {
-      toast.error('Chọn ít nhất 1 câu hỏi')
+      toast.error(t('pickAtLeastOne'))
       return
     }
     setImportLoading(true)
@@ -480,13 +538,13 @@ export default function QuizEditorPage() {
         Array.from(importSelected)
       )
       if (!res.success) {
-        toast.error(res.error || 'Không thêm được câu')
+        toast.error(res.error || t('importFailed'))
         return
       }
       const updated = await getQuizById(quizId)
       setQuiz(updated)
       setImportOpen(false)
-      toast.success(`Đã thêm ${res.imported} câu`, `Quiz giờ có ${res.totalAfter} câu`)
+      toast.success(t('imported', { n: res.imported }), t('importedTotal', { total: res.totalAfter }))
     } catch (e) {
       toast.apiError(e, (href) => router.push(href))
     } finally {
@@ -603,7 +661,7 @@ export default function QuizEditorPage() {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center z-10 space-y-4">
             <div className="mx-auto h-10 w-10 rounded-full border-2 border-[#2c313d] border-t-[#e85d4c] animate-spin" />
-            <p className="text-sm text-[#9a9eab] font-medium">Loading quiz...</p>
+            <p className="text-sm text-[#9a9eab] font-medium">{t('loading')}</p>
           </div>
         </div>
       </GameBackground>
@@ -619,12 +677,12 @@ export default function QuizEditorPage() {
               <FileQuestion className="h-7 w-7 text-[#9a9eab]" />
             </div>
             <div className="space-y-1">
-              <p className="text-[#f2f0eb] font-semibold text-lg">Quiz not found</p>
-              <p className="text-sm text-[#9a9eab]">This quiz may have been deleted or you lack access.</p>
+              <p className="text-[#f2f0eb] font-semibold text-lg">{t('notFound')}</p>
+              <p className="text-sm text-[#9a9eab]">{t('notFoundBody')}</p>
             </div>
             <Link href="/dashboard">
               <Button className="bg-[#e85d4c] hover:bg-[#d44e3e] text-[#fff8f5] font-semibold rounded-xl">
-                Back to Dashboard
+                {t('backToDashboard')}
               </Button>
             </Link>
           </div>
@@ -653,7 +711,7 @@ export default function QuizEditorPage() {
     <div className="space-y-6">
       <div className="space-y-4">
         <div className="space-y-2">
-          <span className="text-sm text-[#9a9eab] block">Test knowledge</span>
+          <span className="text-sm text-[#9a9eab] block">{t('testKnowledge')}</span>
           <div className="grid grid-cols-2 gap-2">
             {[
               { id: 'multiple_choice', name: 'Quiz' },
@@ -677,7 +735,7 @@ export default function QuizEditorPage() {
         </div>
 
         <div className="space-y-2">
-          <span className="text-sm text-[#9a9eab] block">Collect opinions</span>
+          <span className="text-sm text-[#9a9eab] block">{t('collectOpinions')}</span>
           <div className="grid grid-cols-2 gap-2">
             {[
               { id: 'poll', name: 'Poll' },
@@ -699,7 +757,7 @@ export default function QuizEditorPage() {
       </div>
 
       <div className="space-y-2 pt-4 border-t border-[#2c313d]">
-        <label className="text-sm text-[#9a9eab]">Time limit</label>
+        <label className="text-sm text-[#9a9eab]">{t('timeLimit')}</label>
         <select
           value={activeQuestion.timeLimit}
           onChange={(e) =>
@@ -722,11 +780,21 @@ export default function QuizEditorPage() {
       </div>
 
       <div className="space-y-2">
-        <label className="text-sm text-[#9a9eab]">Score reward</label>
+        <label className="text-sm text-[#9a9eab]">{t('scoreReward')}</label>
         <div className="bg-[#12141a] border border-[#2c313d] rounded-xl px-4 py-3 text-sm font-medium text-[#2dd4bf] flex items-center justify-between">
-          <span className="text-[#c5c2ba]">Standard points</span>
+          <span className="text-[#c5c2ba]">{t('standardPoints')}</span>
           <span>{activeQuestion.points || 1000} pts</span>
         </div>
+      </div>
+
+      <div className="pt-6 border-t border-[#2c313d]">
+        <ExplanationEditor
+          key={activeQuestion.id}
+          value={activeQuestion.explanation || ''}
+          onSave={(json) => handleExplanationSave(activeQuestion.id, json)}
+          duration={explanationDuration}
+          onDurationChange={handleExplanationDurationChange}
+        />
       </div>
 
       <div className="pt-6 border-t border-[#2c313d]">
@@ -736,12 +804,12 @@ export default function QuizEditorPage() {
           className="w-full border-[#2c313d] bg-transparent hover:bg-[#e85d4c]/10 hover:border-[#e85d4c]/40 text-[#e85d4c] font-semibold py-3 rounded-xl cursor-pointer gap-2"
         >
           <Trash2 className="h-4 w-4" />
-          Delete slide
+          {t('deleteSlide')}
         </Button>
       </div>
     </div>
   ) : (
-    <p className="text-sm text-[#9a9eab]">Select a slide to view settings</p>
+    <p className="text-sm text-[#9a9eab]">{t('selectSlideHint')}</p>
   )
 
   return (
@@ -757,7 +825,7 @@ export default function QuizEditorPage() {
                 className="text-[#c5c2ba] hover:text-[#f2f0eb] hover:bg-[#12141a] rounded-xl gap-2 h-10 px-2.5 sm:px-3"
               >
                 <ArrowLeft className="h-4 w-4" />
-                <span className="hidden sm:inline">Back</span>
+                <span className="hidden sm:inline">{t('back')}</span>
               </Button>
             </Link>
             <div className="h-6 w-px bg-[#2c313d] hidden sm:block" />
@@ -777,7 +845,7 @@ export default function QuizEditorPage() {
                 setEditDescription(quiz.description || '')
                 setQuizSettingsOpen(true)
               }}
-              title="Cấu hình Quiz"
+              title={t('quizConfig')}
               className="h-8 w-8 text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-[#12141a] rounded-lg shrink-0 cursor-pointer"
             >
               <Settings className="h-4 w-4" />
@@ -790,16 +858,16 @@ export default function QuizEditorPage() {
                 onClick={openImportPanel}
                 disabled={saving}
                 variant="outline"
-                title="Lấy câu hỏi từ quiz khác của bạn"
+                title={t('importFromYours')}
                 className="border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-[#12141a] font-semibold px-4 rounded-xl h-10 text-sm gap-1.5"
               >
                 <CopyPlus className="w-4 h-4" />
-                Thêm từ quiz
+                {t('addFromQuiz')}
               </Button>
               <Button
                 onClick={() => handleStartGame('classic')}
                 disabled={saving || quiz.questions?.length === 0}
-                title="Host controls the pace: everyone sees the same question at the same time"
+                title={t('classicHint')}
                 className="bg-[#e85d4c] hover:bg-[#d44e3e] disabled:opacity-40 text-[#fff8f5] font-semibold px-5 rounded-xl h-10 text-sm border-none"
               >
                 {saving ? 'Launching...' : 'Classic'}
@@ -808,14 +876,14 @@ export default function QuizEditorPage() {
                 onClick={() => handleStartGame('solo')}
                 disabled={saving || quiz.questions?.length === 0}
                 variant="outline"
-                title="Each player goes through questions at their own speed"
+                title={t('soloHint')}
                 className="border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-[#12141a] hover:text-[#f2f0eb] disabled:opacity-40 font-semibold px-5 rounded-xl h-10 text-sm"
               >
                 {saving ? 'Launching...' : 'Solo'}
               </Button>
             </div>
             <p className="text-xs text-[#9a9eab] hidden sm:block">
-              Classic = host-paced. Solo = self-paced.
+              {t('paceHint')}
             </p>
           </div>
         </div>
@@ -824,7 +892,7 @@ export default function QuizEditorPage() {
       <div className="flex flex-col lg:flex-row flex-1 min-h-0 lg:h-[calc(100dvh-73px)] overflow-visible lg:overflow-hidden font-sans">
         <aside className="w-full lg:w-64 lg:shrink-0 border-b lg:border-b-0 lg:border-r border-[#2c313d] bg-[#1a1d26] flex flex-col h-auto lg:h-full select-none shrink-0" data-tour="question-slides">
           <div className="px-4 py-2 lg:p-4 border-b border-[#2c313d] flex items-center justify-between shrink-0">
-            <h3 className="text-sm text-[#9a9eab] font-medium">Questions</h3>
+            <h3 className="text-sm text-[#9a9eab] font-medium">{t('questions')}</h3>
             <span className="text-xs font-medium bg-[#12141a] text-[#c5c2ba] px-2 py-0.5 rounded-lg border border-[#2c313d]">
               {quiz.questions?.length || 0}
             </span>
@@ -877,7 +945,7 @@ export default function QuizEditorPage() {
                       handleDeleteQuestion(q.id)
                     }}
                     className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-[#9a9eab] hover:text-[#e85d4c] transition-opacity bg-transparent border-none cursor-pointer p-2 shrink-0"
-                    aria-label="Delete slide"
+                    aria-label={t('deleteSlide')}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -889,10 +957,10 @@ export default function QuizEditorPage() {
               onClick={handleAddQuestion}
               disabled={saving}
               className="lg:hidden flex items-center justify-center gap-1.5 w-24 shrink-0 rounded-xl border border-dashed border-[#2c313d] bg-[#12141a] text-[#9a9eab] hover:text-[#f2f0eb] text-xs font-semibold cursor-pointer disabled:opacity-40 min-h-14"
-              aria-label="Add slide"
+              aria-label={t('addSlide')}
             >
               <Plus className="h-4 w-4" />
-              Add
+              {t('add')}
             </button>
           </div>
 
@@ -904,7 +972,7 @@ export default function QuizEditorPage() {
               className="w-full border-[#2c313d] bg-[#12141a] hover:bg-[#12141a]/80 text-[#f2f0eb] font-semibold py-3 rounded-xl cursor-pointer gap-2"
             >
               <Plus className="h-4 w-4" />
-              Add slide
+              {t('addSlide')}
             </Button>
           </div>
         </aside>
@@ -916,9 +984,9 @@ export default function QuizEditorPage() {
                 <FileQuestion className="h-8 w-8 text-[#9a9eab]" />
               </div>
               <div className="space-y-2">
-                <h2 className="text-xl font-semibold text-[#f2f0eb]">No slide selected</h2>
+                <h2 className="text-xl font-semibold text-[#f2f0eb]">{t('noSlide')}</h2>
                 <p className="text-sm text-[#9a9eab] max-w-sm leading-relaxed">
-                  Select a slide from the left or create a new one to start editing.
+                  {t('noSlideBody')}
                 </p>
               </div>
               <Button
@@ -927,7 +995,7 @@ export default function QuizEditorPage() {
                 className="bg-[#e85d4c] hover:bg-[#d44e3e] text-[#fff8f5] font-semibold rounded-xl px-6 gap-2"
               >
                 <Plus className="h-4 w-4" />
-                {saving ? 'Adding...' : 'Add first slide'}
+                {saving ? t('adding') : t('addFirstSlide')}
               </Button>
             </div>
           ) : (
@@ -937,7 +1005,7 @@ export default function QuizEditorPage() {
                 <textarea
                   key={`text-${activeQuestion.id}`}
                   defaultValue={activeParsedContent.text}
-                  placeholder="Type your question here..."
+                  placeholder={t('questionPlaceholder')}
                   rows={2}
                   className={`w-full ${inputClass} px-3 sm:px-6 py-3 sm:py-5 text-base sm:text-xl md:text-2xl font-semibold resize-none transition-all text-center`}
                   onBlur={(e) =>
@@ -964,7 +1032,7 @@ export default function QuizEditorPage() {
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={activeParsedContent.mediaUrl}
-                      alt="Question Graphic"
+                      alt={t('questionGraphic')}
                       className="w-full h-full object-contain pointer-events-none"
                       onLoad={(e) => {
                         const im = e.currentTarget
@@ -993,7 +1061,7 @@ export default function QuizEditorPage() {
                         className="bg-[#1a1d26]/90 hover:bg-[#1a1d26] border border-[#2c313d] cursor-pointer h-9 px-3 rounded-xl text-xs font-medium text-[#f2f0eb] gap-1.5"
                       >
                         <ImagePlus className="h-3.5 w-3.5" />
-                        Change
+                        {t('change')}
                       </Button>
                       <Button
                         onClick={(e) => {
@@ -1003,7 +1071,7 @@ export default function QuizEditorPage() {
                         className="bg-[#1a1d26]/90 hover:bg-[#e85d4c]/20 border border-[#2c313d] hover:border-[#e85d4c]/40 cursor-pointer h-9 px-3 rounded-xl text-xs font-medium text-[#e85d4c] gap-1.5"
                       >
                         <X className="h-3.5 w-3.5" />
-                        Remove
+                        {t('remove')}
                       </Button>
                     </div>
                   </>
@@ -1013,15 +1081,15 @@ export default function QuizEditorPage() {
                       <ImagePlus className="h-7 w-7 text-[#9a9eab]" />
                     </div>
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-[#f2f0eb]">Add media</p>
-                      <p className="text-xs text-[#9a9eab]">Insert a GIF from the Giphy library</p>
+                      <p className="text-sm font-semibold text-[#f2f0eb]">{t('addMedia')}</p>
+                      <p className="text-xs text-[#9a9eab]">{t('insertGif')}</p>
                     </div>
                     <Button
                       onClick={() => triggerGiphy('question', activeQuestion.id)}
                       className="bg-[#e85d4c] hover:bg-[#d44e3e] text-[#fff8f5] font-semibold rounded-xl px-5 h-10 border-none cursor-pointer gap-2"
                     >
                       <ImagePlus className="h-4 w-4" />
-                      Find GIF
+                      {t('findGif')}
                     </Button>
                   </div>
                 )}
@@ -1029,7 +1097,7 @@ export default function QuizEditorPage() {
 
               <div className="space-y-6" data-tour="answer-options">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm text-[#9a9eab] font-medium">Answers</h4>
+                  <h4 className="text-sm text-[#9a9eab] font-medium">{t('answers')}</h4>
                   {(activeType === 'multiple_choice' || activeType === 'poll') && (
                     <Button
                       onClick={() => handleAddOption(activeQuestion.id)}
@@ -1039,7 +1107,7 @@ export default function QuizEditorPage() {
                       className="border-[#2c313d] text-[#c5c2ba] hover:bg-[#12141a] hover:text-[#f2f0eb] rounded-xl text-xs font-medium h-9 gap-1.5 cursor-pointer"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      Add choice
+                      {t('addChoice')}
                     </Button>
                   )}
                 </div>
@@ -1047,13 +1115,13 @@ export default function QuizEditorPage() {
                 {activeType === 'short_answer' && (
                   <div className="space-y-3 bg-[#1a1d26] border border-[#2c313d] rounded-2xl p-6">
                     <label className="text-sm font-semibold text-[#f2f0eb]">
-                      Correct answer (case-insensitive)
+                      {t('correctAnswerCI')}
                     </label>
                     <Input
                       type="text"
                       key={`correct-${activeQuestion.id}`}
                       defaultValue={activeQuestion.correct_answer}
-                      placeholder="E.g. Paris"
+                      placeholder={t('answerExample')}
                       className={`w-full ${inputClass} h-12`}
                       onBlur={(e) =>
                         handleQuestionCorrectAnswerBlur(
@@ -1066,16 +1134,16 @@ export default function QuizEditorPage() {
                       }
                     />
                     <p className="text-xs text-[#9a9eab] leading-normal">
-                      Players must type this text. Leading/trailing whitespace is trimmed; match is case-insensitive.
+                      {t('typeAnswerHint')}
                     </p>
                   </div>
                 )}
 
                 {activeType === 'pin_answer' && (
                   <div className="bg-[#1a1d26] border border-[#2c313d] rounded-2xl p-6 text-center space-y-3">
-                    <h5 className="text-sm font-semibold text-[#f2f0eb]">Configure hotspot</h5>
+                    <h5 className="text-sm font-semibold text-[#f2f0eb]">{t('configureHotspot')}</h5>
                     <p className="text-xs text-[#9a9eab] max-w-md mx-auto leading-normal">
-                      Add a GIF or image above, then click directly on the preview to set the correct pin target coordinate.
+                      {t('hotspotHint')}
                     </p>
                     <div className="inline-flex bg-[#12141a] border border-[#2c313d] px-3 py-1.5 rounded-xl text-xs font-medium text-[#c5c2ba]">
                       Target: {activeQuestion.correct_answer || '50,50'} (X, Y%)
@@ -1127,7 +1195,7 @@ export default function QuizEditorPage() {
                               <button
                                 onClick={() => handleDeleteOption(option.id, activeQuestion.id)}
                                 className="text-[#9a9eab] hover:text-[#e85d4c] transition-colors bg-transparent border-none cursor-pointer p-2"
-                                aria-label="Delete option"
+                                aria-label={t('deleteOption')}
                               >
                                 <X className="h-4 w-4" />
                               </button>
@@ -1139,13 +1207,13 @@ export default function QuizEditorPage() {
                               {option.mediaUrl ? (
                                 <div className="relative w-16 h-10 rounded-lg overflow-hidden border border-[#2c313d] group/gif bg-[#12141a]">
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src={option.mediaUrl} alt="option gif" className="w-full h-full object-cover" />
+                                  <img src={option.mediaUrl} alt={t('optionGif')} className="w-full h-full object-cover" />
                                   <button
                                     onClick={() => handleRemoveGif('option', activeQuestion.id, option.id)}
                                     className="absolute inset-0 bg-[#12141a]/90 flex items-center justify-center text-[#e85d4c] text-[10px] font-medium opacity-100 md:opacity-0 md:group-hover/gif:opacity-100 transition-opacity border-none cursor-pointer gap-1"
                                   >
                                     <X className="h-3 w-3" />
-                                    Remove
+                                    {t('remove')}
                                   </button>
                                 </div>
                               ) : (
@@ -1154,7 +1222,7 @@ export default function QuizEditorPage() {
                                   className="min-h-10 text-xs font-medium text-[#c5c2ba] bg-[#12141a] hover:bg-[#12141a]/80 px-3 py-1.5 rounded-xl border border-[#2c313d] cursor-pointer flex items-center gap-1.5"
                                 >
                                   <ImagePlus className="h-3.5 w-3.5" />
-                                  Add GIF
+                                  {t('addGif')}
                                 </button>
                               )}
                             </div>
@@ -1177,7 +1245,7 @@ export default function QuizEditorPage() {
                                 }`}
                               >
                                 {isCorrect && <Check className="h-3.5 w-3.5" />}
-                                {isCorrect ? 'Correct' : 'Mark correct'}
+                                {isCorrect ? t('correct') : t('markCorrect')}
                               </button>
                             )}
                           </div>
@@ -1191,8 +1259,11 @@ export default function QuizEditorPage() {
           )}
         </section>
 
-        <aside className="hidden lg:block w-72 shrink-0 border-l border-[#2c313d] bg-[#1a1d26] p-6 space-y-6 overflow-y-auto select-none h-full">
-          <h3 className="text-sm text-[#9a9eab] font-medium">Slide settings</h3>
+        {/* Fixed at 18rem it stayed 288px wide on a 2560px screen, which is
+            where the slide preview inside it became unreadable. It grows with
+            the window now; the canvas still gets everything left over. */}
+        <aside className="hidden lg:block w-72 xl:w-80 2xl:w-96 shrink-0 border-l border-[#2c313d] bg-[#1a1d26] p-6 space-y-6 overflow-y-auto select-none h-full">
+          <h3 className="text-sm text-[#9a9eab] font-medium">{t('slideSettings')}</h3>
           {slideSettingsContent}
         </aside>
       </div>
@@ -1202,10 +1273,10 @@ export default function QuizEditorPage() {
           type="button"
           onClick={() => setMobileSettingsOpen(true)}
           className="lg:hidden fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 z-50 flex items-center gap-2 rounded-full bg-[#1a1d26] border border-[#2c313d] text-[#f2f0eb] shadow-lg px-4 py-3 text-sm font-semibold cursor-pointer"
-          aria-label="Slide settings"
+          aria-label={t('slideSettings')}
         >
           <SlidersHorizontal className="w-5 h-5" />
-          Settings
+          {t('settings')}
         </button>
       )}
 
@@ -1222,7 +1293,7 @@ export default function QuizEditorPage() {
                 type="button"
                 onClick={() => setMobileSettingsOpen(false)}
                 className="flex h-10 w-10 items-center justify-center rounded-lg text-[#9a9eab] hover:text-[#f2f0eb] cursor-pointer -mr-2"
-                aria-label="Close settings"
+                aria-label={t('closeSettings')}
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1237,9 +1308,9 @@ export default function QuizEditorPage() {
           <div className="w-full max-w-lg rounded-2xl border border-[#2c313d] bg-[#1a1d26] p-6 space-y-4 shadow-2xl max-h-[85dvh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-[#f2f0eb]">Thêm câu từ quiz khác</h2>
+                <h2 className="text-lg font-bold text-[#f2f0eb]">{t('importTitle')}</h2>
                 <p className="text-xs text-[#9a9eab] mt-1">
-                  Chọn quiz nguồn, tick câu cần lấy — copy vào quiz hiện tại (không tạo kho riêng).
+                  {t('importBody')}
                 </p>
               </div>
               <Button
@@ -1258,7 +1329,7 @@ export default function QuizEditorPage() {
               disabled={importLoading}
               className="w-full h-11 rounded-xl bg-[#12141a] border border-[#2c313d] text-[#f2f0eb] text-base sm:text-sm px-3"
             >
-              <option value="">Chọn quiz nguồn…</option>
+              <option value="">{t('importPick')}</option>
               {otherQuizzes.map((q) => (
                 <option key={q.id} value={q.id}>
                   {q.title} ({q.questionCount} câu)
@@ -1267,7 +1338,7 @@ export default function QuizEditorPage() {
             </select>
 
             {!importLoading && otherQuizzes.length === 0 && (
-              <p className="text-sm text-[#9a9eab]">Chưa có quiz khác có câu hỏi để lấy.</p>
+              <p className="text-sm text-[#9a9eab]">{t('importEmpty')}</p>
             )}
 
             {importSourceQs.length > 0 && (
@@ -1305,14 +1376,14 @@ export default function QuizEditorPage() {
                 onClick={() => setImportOpen(false)}
                 className="flex-1 h-10 rounded-xl border-[#2c313d]"
               >
-                Hủy
+                {tCommon('cancel')}
               </Button>
               <Button
                 disabled={importLoading || importSelected.size === 0}
                 onClick={confirmImport}
                 className="flex-1 h-10 rounded-xl bg-[#e85d4c] hover:bg-[#d44e3e] text-white border-none font-semibold"
               >
-                {importLoading ? 'Đang thêm…' : `Thêm ${importSelected.size} câu`}
+                {importLoading ? t('importing') : t('importAddCount', { count: importSelected.size })}
               </Button>
             </div>
           </div>
@@ -1323,7 +1394,7 @@ export default function QuizEditorPage() {
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-[#2c313d] bg-[#1a1d26] p-4 sm:p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#2c313d] pb-3">
-              <h2 className="text-lg font-bold text-[#f2f0eb]">Cấu hình Quiz</h2>
+              <h2 className="text-lg font-bold text-[#f2f0eb]">{t('quizConfig')}</h2>
               <button
                 onClick={() => setQuizSettingsOpen(false)}
                 className="flex h-10 w-10 items-center justify-center rounded-lg text-[#9a9eab] hover:text-[#f2f0eb] transition-colors bg-transparent border-none cursor-pointer"
@@ -1334,22 +1405,22 @@ export default function QuizEditorPage() {
 
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-[#c5c2ba]">Tên Quiz</label>
+                <label className="text-sm font-medium text-[#c5c2ba]">{t('quizName')}</label>
                 <Input
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  placeholder="Nhập tên quiz..."
+                  placeholder={t('quizNamePlaceholder')}
                   className={`w-full ${inputClass} h-10`}
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-[#c5c2ba]">Mô tả</label>
+                <label className="text-sm font-medium text-[#c5c2ba]">{t('quizDescription')}</label>
                 <textarea
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
-                  placeholder="Nhập mô tả cho quiz này..."
+                  placeholder={t('quizDescPlaceholder')}
                   rows={4}
                   className={`w-full bg-[#12141a] border border-[#2c313d] focus:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] rounded-xl p-3 focus:outline-none text-sm resize-none`}
                 />
@@ -1362,14 +1433,14 @@ export default function QuizEditorPage() {
                 onClick={() => setQuizSettingsOpen(false)}
                 className="h-11 w-full sm:h-10 sm:w-auto border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-[#12141a] px-4 rounded-xl"
               >
-                Hủy
+                {tCommon('cancel')}
               </Button>
               <Button
                 onClick={handleSaveQuizSettings}
                 disabled={saving}
                 className="h-11 w-full sm:h-10 sm:w-auto bg-[#e85d4c] hover:bg-[#d44e3e] text-white px-5 rounded-xl border-none"
               >
-                {saving ? 'Đang lưu...' : 'Lưu cài đặt'}
+                {saving ? t('saving') : t('saveSettings')}
               </Button>
             </div>
           </div>
@@ -1385,7 +1456,7 @@ export default function QuizEditorPage() {
         onSelect={handleGifSelect}
       />
       </div>
-      <TourButton tour={quizEditorTour} label="Hướng dẫn" position="bottom-right" />
+      <TourButton tour={quizEditorTour(tTour)} label={t('guide')} position="bottom-right" />
     </GameBackground>
   )
 }

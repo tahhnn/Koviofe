@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { uploadImageAction } from '@/app/actions/upload'
@@ -17,6 +18,7 @@ const GIPHY_PROXY = '/api/giphy'
 const SUGGESTIONS = ['reactions', 'education', 'science', 'celebration', 'funny', 'yes', 'no', 'thinking']
 
 export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
+  const t = useTranslations('media')
   const [mediaTab, setMediaTab] = useState<'giphy' | 'upload' | 'url'>('giphy')
   const [searchQuery, setSearchQuery] = useState('')
   const [gifs, setGifs] = useState<any[]>([])
@@ -102,7 +104,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
       }
     } catch (err) {
       console.error('Upload error:', err)
-      alert('Error uploading file')
+      alert(t('uploadError'))
     } finally {
       setUploading(false)
     }
@@ -111,9 +113,9 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
   if (!isOpen) return null
 
   const tabs = [
-    { id: 'giphy' as const, label: 'GIF library', icon: Search },
-    { id: 'upload' as const, label: 'Upload', icon: Upload },
-    { id: 'url' as const, label: 'Link', icon: Link2 },
+    { id: 'giphy' as const, label: t('gifLibrary'), icon: Search },
+    { id: 'upload' as const, label: t('upload'), icon: Upload },
+    { id: 'url' as const, label: t('link'), icon: Link2 },
   ]
 
   return (
@@ -131,10 +133,10 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
         <header className="px-5 sm:px-6 py-4 border-b border-[#2c313d] flex items-start justify-between gap-4 shrink-0">
           <div className="min-w-0">
             <h2 id="media-picker-title" className="text-lg font-semibold text-[#f2f0eb] tracking-tight">
-              Add media
+              {t('addMedia')}
             </h2>
             <p className="text-sm text-[#9a9eab] mt-0.5">
-              Search GIFs, upload a file, or paste an image link.
+              {t('searchHint')}
             </p>
           </div>
           <button
@@ -181,7 +183,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                   <Input
                     ref={searchRef}
                     type="text"
-                    placeholder="Search GIFs…"
+                    placeholder={t('searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -192,7 +194,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                   onClick={() => handleSearch()}
                   className="bg-[#e85d4c] hover:bg-[#d44e3e] text-[#fff8f5] font-semibold px-5 h-11 rounded-xl border-none shrink-0"
                 >
-                  Search
+                  {t('search')}
                 </Button>
               </div>
 
@@ -209,7 +211,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                       : 'bg-[#12141a] border-[#2c313d] text-[#9a9eab] hover:text-[#f2f0eb]'
                   }`}
                 >
-                  Trending
+                  {t('trending')}
                 </button>
                 {SUGGESTIONS.map((cat) => (
                   <button
@@ -235,14 +237,14 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
               {loading ? (
                 <div className="h-full min-h-[200px] flex flex-col items-center justify-center gap-3">
                   <Loader2 className="h-7 w-7 text-[#e85d4c] animate-spin" />
-                  <p className="text-sm text-[#9a9eab]">Loading GIFs…</p>
+                  <p className="text-sm text-[#9a9eab]">{t('loadingGifs')}</p>
                 </div>
               ) : gifs.length === 0 ? (
                 <div className="h-full min-h-[200px] flex flex-col items-center justify-center text-center gap-2 px-4">
                   <ImagePlus className="h-8 w-8 text-[#3d4454]" />
-                  <p className="text-sm font-medium text-[#f2f0eb]">No results</p>
+                  <p className="text-sm font-medium text-[#f2f0eb]">{t('noResults')}</p>
                   <p className="text-xs text-[#9a9eab] max-w-xs">
-                    Try a shorter keyword, or browse Trending.
+                    {t('noResultsHint')}
                   </p>
                 </div>
               ) : (
@@ -265,7 +267,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                           loading="lazy"
                         />
                         <span className="absolute inset-x-0 bottom-0 py-2 text-center text-[11px] font-medium text-[#fff8f5] bg-gradient-to-t from-[#0a0b0f]/90 to-transparent opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                          Use this
+                          {t('useThis')}
                         </span>
                       </button>
                     )
@@ -275,7 +277,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
             </div>
 
             <footer className="px-5 sm:px-6 py-2.5 border-t border-[#2c313d] shrink-0">
-              <p className="text-[10px] text-[#5c6170] text-right">Powered by Giphy</p>
+              <p className="text-[10px] text-[#5c6170] text-right">{t('poweredBy')}</p>
             </footer>
           </>
         )}
@@ -284,14 +286,14 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
           <div className="flex-1 p-5 sm:p-8 flex flex-col items-center justify-center">
             <div className="w-full max-w-md space-y-4">
               <div className="text-center space-y-1">
-                <h3 className="text-base font-semibold text-[#f2f0eb]">Upload from device</h3>
-                <p className="text-sm text-[#9a9eab]">PNG, JPG, WEBP, or GIF · max 5MB</p>
+                <h3 className="text-base font-semibold text-[#f2f0eb]">{t('uploadFromDevice')}</h3>
+                <p className="text-sm text-[#9a9eab]">{t('fileHint')}</p>
               </div>
 
               {uploading ? (
                 <div className="h-40 rounded-2xl border border-[#2c313d] bg-[#12141a] flex flex-col items-center justify-center gap-3">
                   <Loader2 className="h-6 w-6 text-[#e85d4c] animate-spin" />
-                  <p className="text-sm text-[#9a9eab]">Uploading…</p>
+                  <p className="text-sm text-[#9a9eab]">{t('uploading')}</p>
                 </div>
               ) : (
                 <label
@@ -315,8 +317,8 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                     <Upload className="h-5 w-5 text-[#c5c2ba]" />
                   </div>
                   <div className="text-center px-4">
-                    <p className="text-sm font-medium text-[#f2f0eb]">Drop a file here</p>
-                    <p className="text-xs text-[#9a9eab] mt-1">or click to browse</p>
+                    <p className="text-sm font-medium text-[#f2f0eb]">{t('dropFile')}</p>
+                    <p className="text-xs text-[#9a9eab] mt-1">{t('orBrowse')}</p>
                   </div>
                   <input
                     type="file"
@@ -334,8 +336,8 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
           <div className="flex-1 p-5 sm:p-8 flex flex-col items-center justify-center">
             <div className="w-full max-w-md space-y-5">
               <div className="text-center space-y-1">
-                <h3 className="text-base font-semibold text-[#f2f0eb]">Paste image URL</h3>
-                <p className="text-sm text-[#9a9eab]">Must be a direct HTTPS link to an image file.</p>
+                <h3 className="text-base font-semibold text-[#f2f0eb]">{t('pasteUrl')}</h3>
+                <p className="text-sm text-[#9a9eab]">{t('urlHint')}</p>
               </div>
 
               <Input
@@ -359,18 +361,18 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                   try {
                     const u = new URL(raw)
                     if (u.protocol !== 'https:') {
-                      alert('Only HTTPS image URLs are allowed')
+                      alert(t('httpsOnly'))
                       return
                     }
                     pick(raw)
                   } catch {
-                    alert('Invalid image URL')
+                    alert(t('invalidUrl'))
                   }
                 }}
                 disabled={!imageUrlInput.trim()}
                 className="w-full bg-[#e85d4c] hover:bg-[#d44e3e] disabled:opacity-40 text-[#fff8f5] font-semibold h-11 rounded-xl border-none"
               >
-                Use link
+                {t('useLink')}
               </Button>
             </div>
           </div>

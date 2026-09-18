@@ -81,7 +81,6 @@ export function useWebSocket(roomId: string, pinCode?: string) {
 
     let active = true
     let reconnectTimeout: ReturnType<typeof setTimeout>
-    let pingInterval: ReturnType<typeof setInterval>
 
     const startConnection = async () => {
       try {
@@ -157,14 +156,6 @@ export function useWebSocket(roomId: string, pinCode?: string) {
         const subscribeChannel =
           channelFromToken || (resolvedPin ? `rooms:${resolvedPin}` : '')
 
-        console.log('[WS] setup', {
-          roomId,
-          resolvedPin,
-          channelFromToken,
-          subscribeChannel,
-          tokenPrefix: token ? token.slice(0, 20) + '…' : 'missing',
-        })
-
         if (!active || !token || !subscribeChannel) {
           console.warn('[WS] missing token or channel, retrying...', { token, subscribeChannel })
           reconnectTimeout = setTimeout(startConnection, 2500)
@@ -179,11 +170,18 @@ export function useWebSocket(roomId: string, pinCode?: string) {
           }
         }
 
-        ws.current = new WebSocket(socketUrl)
+        const socket = new WebSocket(socketUrl)
+        ws.current = socket
 
-        ws.current.onopen = () => {
-          if (!active) return
-          ws.current?.send(
+        // A socket that has already been replaced must not touch state. During a
+        // reconnect the old socket is closed *before* the new one is assigned, so
+        // its close event fires afterwards — and used to flip `connected` back to
+        // false on top of a healthy new connection.
+        const isCurrent = () => active && ws.current === socket
+
+        socket.onopen = () => {
+          if (!isCurrent()) return
+          socket.send(
             JSON.stringify({
               connect: { token },
               id: 1,
@@ -191,18 +189,20 @@ export function useWebSocket(roomId: string, pinCode?: string) {
           )
         }
 
-        ws.current.onmessage = (event) => {
-          if (!active) return
+        socket.onmessage = (event) => {
+          if (!isCurrent()) return
           try {
+            // Centrifugo's JSON protocol pings with an empty object and wants the
+            // same back. Answer it — but never send one unprompted, see below.
             if (event.data === '{}' || !event.data) {
-              ws.current?.send('{}')
+              socket.send('{}')
               return
             }
 
             const response = JSON.parse(event.data)
 
             if (Object.keys(response).length === 0) {
-              ws.current?.send('{}')
+              socket.send('{}')
               return
             }
 
@@ -211,25 +211,37 @@ export function useWebSocket(roomId: string, pinCode?: string) {
               // Drop bad cached token so next retry mints a fresh one
               sessionStorage.removeItem(`centrifugo_token_${roomId}`)
               setConnected(false)
-              ws.current?.close()
+              socket.close()
               return
             }
 
             if (response.id === 1 && (response.result || response.connect)) {
               setConnected(true)
-              ws.current?.send(
-                JSON.stringify({
-                  subscribe: { channel: subscribeChannel },
-                  id: 2,
-                })
-              )
-              // Keepalive empty frames (Centrifugo JSON protocol)
-              clearInterval(pingInterval)
-              pingInterval = setInterval(() => {
-                if (ws.current?.readyState === WebSocket.OPEN) {
-                  ws.current.send('{}')
-                }
-              }, 25000)
+
+              // The connection token's `channels` claim subscribes us server
+              // side, so the connect reply already lists the channel under
+              // `subs`. Ask explicitly only if it does not: the `rooms`
+              // namespace sets allow_subscribe_for_client=false, so a redundant
+              // subscribe can only come back as error 105 or 103 — 259 of them
+              // in one afternoon of server logs.
+              const connectResult = response.connect || response.result || {}
+              const subs = connectResult.subs || {}
+              if (!subs[subscribeChannel]) {
+                socket.send(
+                  JSON.stringify({
+                    subscribe: { channel: subscribeChannel },
+                    id: 2,
+                  })
+                )
+              }
+
+              // Deliberately no client-side keepalive timer. Centrifugo pings on
+              // its own schedule and the handler above answers those. An
+              // unsolicited empty frame is NOT a pong to Centrifugo v5 — it is a
+              // command with no method, which it rejects as "bad request" and
+              // then closes the connection. A 25s setInterval sending exactly
+              // that used to disconnect every client 25s after it connected, for
+              // the entire game, each time flashing a "reconnecting" banner.
             }
 
             if (response.id === 2 && response.error) {
@@ -295,13 +307,17 @@ export function useWebSocket(roomId: string, pinCode?: string) {
           }
         }
 
-        ws.current.onerror = () => {
+        socket.onerror = () => {
+          if (!isCurrent()) return
           setConnected(false)
         }
 
-        ws.current.onclose = () => {
+        socket.onclose = () => {
+          // Superseded socket finishing its teardown — its close says nothing
+          // about the connection we are actually using now.
+          if (ws.current !== socket) return
+          ws.current = null
           setConnected(false)
-          clearInterval(pingInterval)
           if (active) {
             reconnectTimeout = setTimeout(startConnection, 3000)
           }
@@ -319,7 +335,6 @@ export function useWebSocket(roomId: string, pinCode?: string) {
     return () => {
       active = false
       clearTimeout(reconnectTimeout)
-      clearInterval(pingInterval)
       if (ws.current) {
         ws.current.close()
       }

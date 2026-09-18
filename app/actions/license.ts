@@ -2,6 +2,7 @@
 
 import { apiRequest, apiRequestText } from '@/services/api/client'
 import { revalidatePath } from 'next/cache'
+import { getTranslations } from 'next-intl/server'
 
 export type PricingPlan = {
   id: string
@@ -23,8 +24,10 @@ export type PricingPlan = {
 
 export type LicenseSnapshot = {
   subscription: any
-  /** Whether the backend is actually enforcing plan gates (LICENSE_ENFORCEMENT). */
+  /** Whether the backend is actually enforcing plan gates. */
   enforcement?: boolean
+  /** Days until the term ends; null or absent when the plan has no expiry. */
+  days_remaining?: number | null
   entitlements: {
     plan_id: string
     plan_name: string
@@ -57,6 +60,9 @@ export type LicenseSubscriptionRow = {
   starts_at?: string
   ends_at?: string | null
   lifetime?: boolean
+  /** Past ends_at but not yet swept — the 5-minute cron is what downgrades. */
+  expired?: boolean
+  days_remaining?: number | null
   max_players_per_room: number
   max_concurrent_rooms?: number
   allow_player_paced: boolean
@@ -73,6 +79,8 @@ export type AssignPlanInput = {
   amountVnd?: number
   externalRef?: string
   note?: string
+  /** Honored only when planId is 'free': ends the user's live games too. */
+  closeRooms?: boolean
 }
 
 export async function listPricingPlans(): Promise<PricingPlan[]> {
@@ -126,6 +134,7 @@ export async function adminAssignPlan(input: AssignPlanInput) {
   if (input.amountVnd && input.amountVnd > 0) body.amount_vnd = input.amountVnd
   if (input.externalRef?.trim()) body.external_ref = input.externalRef.trim()
   if (input.note?.trim()) body.note = input.note.trim()
+  if (input.closeRooms) body.close_rooms = true
   const data = await apiRequest('/admin/license/assign', 'POST', body)
   revalidatePath('/admin/license')
   revalidatePath('/profile/settings')
@@ -173,8 +182,9 @@ export type RedeemResult =
  * generic boundary error instead of the message that tells them what to do.
  */
 export async function redeemLicenseCode(code: string): Promise<RedeemResult> {
+  const t = await getTranslations('license')
   const trimmed = code.trim()
-  if (!trimmed) return { ok: false, error: 'Vui lòng nhập mã kích hoạt' }
+  if (!trimmed) return { ok: false, error: t('codeRequired') }
   try {
     const data = await apiRequest('/license/redeem', 'POST', { code: trimmed })
     revalidatePath('/dashboard')
@@ -186,7 +196,7 @@ export async function redeemLicenseCode(code: string): Promise<RedeemResult> {
       endsAt: data?.subscription?.ends_at ?? null,
     }
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Không kích hoạt được, thử lại sau'
+    const message = e instanceof Error ? e.message : t('redeemFailed')
     return { ok: false, error: message }
   }
 }
@@ -243,6 +253,44 @@ export async function adminRevokeLicenseCode(code: string): Promise<LicenseCode>
   const data = await apiRequest(`/admin/license/codes/${encodeURIComponent(code)}/revoke`, 'POST')
   revalidatePath('/admin/license')
   return data as LicenseCode
+}
+
+export type ClawBackResult = {
+  user_id: number
+  email: string
+  outcome: 'revoked' | 'superseded' | 'already_free' | 'failed'
+  previous_plan?: string
+  reason?: string
+  room_ids?: number[]
+}
+
+export type ClawBackSummary = {
+  code: string
+  revoked_at?: string | null
+  total: number
+  revoked: number
+  skipped: number
+  failed: number
+  rooms_closed: number
+  results: ClawBackResult[]
+}
+
+/**
+ * Revokes a code AND takes the plan back from the users it granted.
+ *
+ * Separate from adminRevokeLicenseCode, which only blocks further redemptions:
+ * this one ends live games, so it is never something to trigger by accident.
+ * Redeemers who have since been granted a different plan are left alone and come
+ * back marked `superseded`.
+ */
+export async function adminClawBackLicenseCode(code: string, note?: string): Promise<ClawBackSummary> {
+  const data = await apiRequest(
+    `/admin/license/codes/${encodeURIComponent(code)}/claw-back`,
+    'POST',
+    note?.trim() ? { note: note.trim() } : {},
+  )
+  revalidatePath('/admin/license')
+  return data as ClawBackSummary
 }
 
 export async function adminListRedemptions(code?: string): Promise<LicenseRedemption[]> {
@@ -328,11 +376,61 @@ export async function adminSendLicenseCodes(input: {
   email: string
   name?: string
 }): Promise<{ sent: number; message: string }> {
+  const t = await getTranslations('adminLicense')
   const data = await apiRequest('/admin/license/codes/send', 'POST', {
     codes: input.codes,
     email: input.email.trim(),
     name: input.name?.trim() || undefined,
   })
   revalidatePath('/admin/license')
-  return { sent: data?.sent ?? 0, message: data?.message ?? 'Đã gửi' }
+  return { sent: data?.sent ?? 0, message: data?.message ?? t('sent') }
+}
+
+export type EnforcementReadiness = {
+  ready: boolean
+  free_plan_locked: boolean
+  grandfather_ran: boolean
+  admins_without_pro: { user_id: number; email: string }[]
+  active_hosts_on_free: number
+  total_active_hosts: number
+  live_rooms_at_risk: number
+  blockers: string[]
+  warnings: string[]
+}
+
+export type EnforcementState = {
+  enforcement: boolean
+  env_pinned: boolean
+  source: 'database' | 'env'
+  updated_at?: string
+  updated_by?: number
+  readiness: EnforcementReadiness
+}
+
+/**
+ * Reads the license kill switch and its pre-flight check.
+ *
+ * Tolerant on purpose: during a rolling deploy the backend may not have this
+ * route yet, and the page must still render its other four tabs rather than
+ * showing one red error across the whole console.
+ */
+export async function adminGetEnforcement(): Promise<EnforcementState | null> {
+  try {
+    return (await apiRequest('/admin/license/enforcement')) as EnforcementState
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Flips the kill switch at runtime — no container restart.
+ *
+ * Throws, unlike the GET: the 409 body carries the readiness verdict the admin
+ * needs to read, and the page's catch → setErr path is how every other mutation
+ * here reports failure.
+ */
+export async function adminSetEnforcement(enabled: boolean, force = false): Promise<EnforcementState> {
+  const data = await apiRequest('/admin/license/enforcement', 'PUT', { enabled, force })
+  revalidatePath('/admin/license')
+  return data as EnforcementState
 }

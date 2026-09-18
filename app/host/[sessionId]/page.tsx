@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { XCircle, MapPin } from 'lucide-react'
+import { XCircle, MapPin, Lightbulb, Trophy } from 'lucide-react'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { QRCodeComponent } from '@/components/qr-code'
 import {
@@ -12,13 +13,21 @@ import {
   endGameSession,
   updateRoomPrivacy,
 } from '@/app/actions/quizzes'
-import { getQuestionByIndex, getAllQuestionsForDisplay, getLeaderboard, getAnswerStats, updateGameSessionState, getQuizQuestionsCount, endQuestion } from '@/app/actions/game'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { getQuestionByIndex, getLeaderboard, getAnswerStats, updateGameSessionState, getQuizQuestionsCount, endQuestion, explainQuestion, showLeaderboard } from '@/app/actions/game'
+import {
+  ExplanationSlide,
+  parseExplanation,
+  preloadExplanation,
+  type ExplanationDoc,
+} from '@/components/explanation-slide'
+import { LeaderboardSlide, type StandingRow } from '@/components/leaderboard-slide'
 import { authClient } from '@/lib/auth-client'
 import { GameBackground } from '@/components/game-background'
+import { HostLobby } from '@/components/host-lobby'
 import { TourButton } from '@/components/tour-button'
 import { hostRoomTour } from '@/lib/tours'
-import { resolveApiError, isAuthError, type ResolvedApiError } from '@/lib/api-errors'
+import { localizeApiError, resolveApiError, isAuthError, type ResolvedApiError } from '@/lib/api-errors'
+import { useToast } from '@/components/ui/toast'
 import Link from 'next/link'
 
 interface Option {
@@ -28,6 +37,11 @@ interface Option {
   mediaUrl?: string
 }
 
+/** How long the answer holds the screen before the slide takes over. A room
+ *  needs longer than a solo player: people are looking up at a projector and
+ *  glancing at the leaderboard, not reading a phone in their hand. */
+const ANSWER_DWELL_MS = 3000
+
 interface Question {
   id: string
   questionText: string
@@ -35,6 +49,8 @@ interface Question {
   options: Option[]
   type?: string
   correctAnswer?: string
+  /** Explanation slide JSON; empty when the host did not write one. */
+  explanation?: string
 }
 
 const parseQuestionContent = (contentStr: string) => {
@@ -54,8 +70,12 @@ const parseQuestionContent = (contentStr: string) => {
 }
 
 export default function HostGameScreen() {
+  const t = useTranslations('host')
+  const tErrors = useTranslations('apiErrors')
+  const tTour = useTranslations('tours')
   const params = useParams()
   const router = useRouter()
+  const toast = useToast()
   const sessionId = params.sessionId as string
 
   const [gameState, setGameState] = useState<any>(null)
@@ -65,16 +85,39 @@ export default function HostGameScreen() {
   const [loading, setLoading] = useState(true)
   const [gameStarted, setGameStarted] = useState(false)
   const [showAnswers, setShowAnswers] = useState(false)
+  // The explanation is a third step between reveal and next, so it stays its
+  // own flag rather than folding into showAnswers — the answer panel is still
+  // what the host returns to if they dismiss the slide.
+  const [showExplanation, setShowExplanation] = useState(false)
+  // The scoreboard closes the question: the host raises it after the answer —
+  // and after the explanation slide when the question has one — and the room
+  // sees it on the projector at the same moment every phone does.
+  const [showBoard, setShowBoard] = useState(false)
+  // The host view of GET /rooms/:id carries the slide with the question, so no
+  // extra round trip is needed to know whether there is one to offer.
+  const explanationDoc: ExplanationDoc | null = parseExplanation(currentQuestion?.explanation)
+  // A host who moves on during the dwell must not have the slide land on the
+  // next question a beat later.
+  const explanationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [totalQuestions, setTotalQuestions] = useState(0)
   const [actionLoading, setActionLoading] = useState(false)
+  // The confirm toast holds a closure from the render that opened it, so the
+  // state value it captured is stale by the time the host answers it. Only a
+  // ref tells endGameNow whether another action is in flight right now.
+  const actionLoadingRef = useRef(false)
   const [privacyLoading, setPrivacyLoading] = useState(false)
   const [accessError, setAccessError] = useState<ResolvedApiError | null>(null)
   const [startCountdown, setStartCountdown] = useState<number | null>(null)
   const [timeLeft, setTimeLeft] = useState<number | null>(null)
   const [pinAspect, setPinAspect] = useState<number | null>(null)
-  const [soloQuestions, setSoloQuestions] = useState<Question[]>([])
-  const [soloIndex, setSoloIndex] = useState(0)
+  // Scores straight off the player:answered push, keyed by player id. The 2s
+  // poll is the source of truth; this only closes the gap until it lands, so a
+  // solo host watching the board sees a score move the moment it is earned.
+  const [livePatches, setLivePatches] = useState<Record<string, any>>({})
   const questionStartRef = useRef<number>(0)
+  // Mirrored on every render so every handler that flips the state keeps the
+  // ref honest, without each of them having to remember to.
+  actionLoadingRef.current = actionLoading
 
   const isPlayerPaced = (() => {
     try {
@@ -119,20 +162,6 @@ export default function HostGameScreen() {
     const id = setInterval(compute, 1000)
     return () => clearInterval(id)
   }, [currentQuestion, gameStarted, showAnswers, gameState?.questionActiveUntil])
-
-  // Solo mode: load full question list so the projected host screen can display questions
-  useEffect(() => {
-    if (!gameStarted || !isPlayerPaced) return
-    let active = true
-    getAllQuestionsForDisplay(sessionId)
-      .then((qs) => {
-        if (active) setSoloQuestions(qs as Question[])
-      })
-      .catch((e) => console.error('Error loading solo questions:', e))
-    return () => {
-      active = false
-    }
-  }, [gameStarted, isPlayerPaced, sessionId])
 
   const handleCopyLink = () => {
     if (joinUrl) {
@@ -233,7 +262,11 @@ export default function HostGameScreen() {
         setGameState(session)
         if (gameStarted) {
           const lb = await getLeaderboard(sessionId)
-          if (!cancelled) setLeaderboard(lb)
+          if (!cancelled) {
+            setLeaderboard(lb)
+            // The poll response supersedes anything the pushes patched in.
+            setLivePatches({})
+          }
         }
       } catch {
         /* ignore */
@@ -285,8 +318,30 @@ export default function HostGameScreen() {
   useEffect(() => {
     if (!connected) return
 
-    const unsubAnswers = on('answer_submitted', () => {
+    const unsubAnswers = on('answer_submitted', (payload: any) => {
       answersDirty.current = true
+      // The push already carries the new score, so show it now rather than
+      // holding the board still for up to two seconds. `finished` is the only
+      // realtime signal that a solo player has run out of questions.
+      const id = payload?.player_id !== undefined ? String(payload.player_id) : ''
+      if (!id) return
+      // Score and finished only. answeredCount is not in the push, and a count
+      // derived from pushes would start at zero and overwrite the polled value
+      // with a smaller one for anyone who answered before this page connected.
+      setLivePatches((prev) => {
+        const patch: Record<string, any> = { ...(prev[id] || {}) }
+        if (payload.score !== undefined) patch.totalPoints = payload.score
+        if (payload.finished !== undefined) patch.finished = payload.finished
+        return { ...prev, [id]: patch }
+      })
+    })
+
+    // Solo mode ends itself: the server finalizes the room as soon as the last
+    // player answers their last question. Without this the host screen sat on a
+    // live-looking board for a game that was already archived.
+    const unsubEnded = on('end_game', (payload: any) => {
+      const reason = payload?.reason ? `?reason=${encodeURIComponent(payload.reason)}` : ''
+      router.push(`/results/${sessionId}${reason}`)
     })
 
     const unsubJoined = on('player:joined', async (payload) => {
@@ -326,10 +381,11 @@ export default function HostGameScreen() {
 
     return () => {
       unsubAnswers()
+      unsubEnded()
       unsubJoined()
       unsubLeft()
     }
-  }, [connected, on, sessionId, currentQuestion])
+  }, [connected, on, sessionId, currentQuestion, router])
 
   const handleTogglePrivacy = async () => {
     if (privacyLoading || gameStarted || !gameState) return
@@ -390,6 +446,7 @@ export default function HostGameScreen() {
           )
           const question = await getQuestionByIndex(sessionId, 0)
           setCurrentQuestion(question)
+          void preloadExplanation(parseExplanation(question?.explanation), 4000)
 
           const lb = await getLeaderboard(sessionId)
           setLeaderboard(lb)
@@ -404,8 +461,18 @@ export default function HostGameScreen() {
     }
   }
 
+  const clearPendingExplanation = () => {
+    if (explanationTimerRef.current) {
+      clearTimeout(explanationTimerRef.current)
+      explanationTimerRef.current = null
+    }
+  }
+
+  useEffect(() => clearPendingExplanation, [])
+
   const handleNextQuestion = async () => {
     if (actionLoading) return
+    clearPendingExplanation()
     setActionLoading(true)
     const nextIndex = ((gameState?.currentQuestionIndex !== undefined ? gameState.currentQuestionIndex : -1)) + 1
     try {
@@ -418,7 +485,13 @@ export default function HostGameScreen() {
       const question = await getQuestionByIndex(sessionId, nextIndex)
       setCurrentQuestion(question)
       setShowAnswers(false)
+      setShowExplanation(false)
+      setShowBoard(false)
       setAnswerStats([])
+
+      // Warm the next slide's image now, while the question is being read, so
+      // the explanation step later has nothing left to fetch.
+      void preloadExplanation(parseExplanation(question?.explanation), 4000)
 
       const lb = await getLeaderboard(sessionId)
       setLeaderboard(lb)
@@ -447,6 +520,24 @@ export default function HostGameScreen() {
       }
 
       send({ type: 'reveal_answer' })
+
+      // The slide follows the answer on its own. The host has one control per
+      // question again (reveal, then next) instead of three, and the room sees
+      // a single continuous beat rather than waiting on a click.
+      const doc = parseExplanation(currentQuestion?.explanation)
+      if (doc) {
+        void preloadExplanation(doc)
+        clearPendingExplanation()
+        explanationTimerRef.current = setTimeout(async () => {
+          explanationTimerRef.current = null
+          const res = await explainQuestion(sessionId)
+          if (res.error) {
+            console.error('Error showing explanation:', res.error)
+            return
+          }
+          setShowExplanation(true)
+        }, ANSWER_DWELL_MS)
+      }
     } catch (error) {
       console.error('Error revealing answer:', error)
     } finally {
@@ -454,37 +545,78 @@ export default function HostGameScreen() {
     }
   }
 
-  const handleEndGame = async () => {
+  /** The last beat of a question: push the scoreboard to the room and show it. */
+  const handleShowLeaderboard = async () => {
     if (actionLoading) return
+    // A pending explanation would otherwise land on top of the board a beat
+    // after the host skipped past it.
+    clearPendingExplanation()
+    setActionLoading(true)
+    try {
+      const res = await showLeaderboard(sessionId)
+      if (res.error) {
+        console.error('Error showing leaderboard:', res.error)
+      }
+      // Read the scores after the push, not before: the board on the projector
+      // and the one on every phone are then the same board.
+      const lb = await getLeaderboard(sessionId)
+      setLeaderboard(lb)
+      setShowBoard(true)
+    } catch (error) {
+      console.error('Error showing leaderboard:', error)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const endGameNow = async () => {
+    // Re-checked here, not only at the prompt: the confirm toast has no
+    // auto-dismiss, so it can sit on screen while the host fires off a reveal
+    // or a next, and still be answered afterwards.
+    if (actionLoadingRef.current) return
+    clearPendingExplanation()
     setActionLoading(true)
     try {
       await endGameSession(sessionId)
       send({ type: 'end_game' })
       router.push(`/results/${sessionId}`)
     } catch (error) {
+      // A silent failure here is the worst kind: the host believes the room is
+      // closed, walks away, and the game is still live on every phone.
       console.error('Error ending game:', error)
+      toast.apiError(error, (href) => router.push(href))
     } finally {
       setActionLoading(false)
     }
+  }
+
+  // Ending is irreversible — the room is archived and every player is thrown to
+  // the results screen — and the button that does it sits directly under the
+  // full-width "next question" CTA. One mis-tap on a projector-driving tablet
+  // used to end the match for the whole room with no way back.
+  const handleEndGame = () => {
+    if (actionLoading) return
+    toast.confirm(t('confirmEndTitle'), () => { void endGameNow() }, t('confirmEndBody'))
   }
 
   if (loading) {
     return (
       <GameBackground variant="arena">
         <div className="flex-1 flex items-center justify-center">
-          <p className="text-[#9a9eab] text-sm">Loading room…</p>
+          <p className="text-[#9a9eab] text-sm">{t('loading')}</p>
         </div>
       </GameBackground>
     )
   }
 
   if (accessError) {
+    const shownError = localizeApiError(accessError, tErrors)
     if (accessError.requiresLogin) {
       void authClient.signOut()
       return (
         <GameBackground variant="arena">
           <div className="flex-1 flex items-center justify-center">
-            <p className="text-[#9a9eab] text-sm">Đang chuyển đến trang đăng nhập…</p>
+            <p className="text-[#9a9eab] text-sm">{t('redirectSignIn')}</p>
           </div>
         </GameBackground>
       )
@@ -493,23 +625,23 @@ export default function HostGameScreen() {
       <GameBackground variant="arena">
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-8 space-y-5 text-center">
-            <h1 className="text-xl font-semibold text-[#f2f0eb]">{accessError.title}</h1>
-            <p className="text-sm text-[#9a9eab] leading-relaxed">{accessError.description}</p>
+            <h1 className="text-xl font-semibold text-[#f2f0eb]">{shownError.title}</h1>
+            <p className="text-sm text-[#9a9eab] leading-relaxed">{shownError.description}</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-              {accessError.href && (
-                <Link href={accessError.href}>
+              {shownError.href && (
+                <Link href={shownError.href}>
                   <Button className="w-full sm:w-auto bg-[#e85d4c] hover:bg-[#d44e3e] text-white font-semibold rounded-xl h-11 px-6 border-none">
-                    {accessError.hrefLabel || 'Tiếp tục'}
+                    {shownError.hrefLabel || tErrors('continue')}
                   </Button>
                 </Link>
               )}
-              {accessError.secondaryHref && (
-                <Link href={accessError.secondaryHref}>
+              {shownError.secondaryHref && (
+                <Link href={shownError.secondaryHref}>
                   <Button
                     variant="outline"
                     className="w-full sm:w-auto border-[#2c313d] text-[#f2f0eb] hover:bg-white/5 rounded-xl h-11 px-6"
                   >
-                    {accessError.secondaryHrefLabel || 'Tùy chọn khác'}
+                    {shownError.secondaryHrefLabel || tErrors('otherOption')}
                   </Button>
                 </Link>
               )}
@@ -520,186 +652,183 @@ export default function HostGameScreen() {
     )
   }
 
+  const countdownOverlay =
+    startCountdown === null ? null : (
+      <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gradient-to-br from-[#12141a] via-[#1a1d26] to-[#12141a] select-none">
+        <div className="text-center space-y-8">
+          <p className="text-xl md:text-2xl xl:text-4xl font-bold tracking-wider text-indigo-400 uppercase animate-pulse">
+            {startCountdown === 0 ? t('preparing') : t('countdownTitle')}
+          </p>
+          <div className="relative h-40 sm:h-56 md:h-64 flex items-center justify-center">
+            <span
+              key={startCountdown}
+              className="text-8xl sm:text-9xl md:text-[10rem] font-extrabold text-[#e85d4c] drop-shadow-[0_0_50px_rgba(232,93,76,0.3)] animate-bounce inline-block select-none"
+            >
+              {startCountdown === 0 ? 'GO!' : startCountdown}
+            </span>
+          </div>
+          <p className="text-sm xl:text-lg text-gray-500 max-w-xs xl:max-w-lg mx-auto leading-relaxed">
+            {startCountdown === 0 ? t('goodLuck') : t('countdownBody')}
+          </p>
+        </div>
+      </div>
+    )
+
+  // The lobby is its own screen, not a card inside the host dashboard: it is
+  // what a room full of people stares at on a projector while they join, so it
+  // gets the whole viewport and the PIN gets the biggest type on it.
+  if (!gameStarted) {
+    return (
+      <GameBackground variant="arena">
+        {countdownOverlay}
+        <HostLobby
+          sessionCode={gameState?.sessionCode}
+          participants={gameState?.participants || []}
+          maxPlayers={gameState?.maxPlayers}
+          isPrivate={!!gameState?.isPrivate}
+          privacyLoading={privacyLoading}
+          onTogglePrivacy={handleTogglePrivacy}
+          connected={connected}
+          joinUrl={joinUrl}
+          copied={copied}
+          onCopyLink={handleCopyLink}
+          onStart={handleStartGame}
+          starting={actionLoading}
+        />
+        <TourButton tour={hostRoomTour(tTour)} label={t('guide')} position="bottom-right" />
+      </GameBackground>
+    )
+  }
+
+
+  const isLastQuestion = (gameState?.currentQuestionIndex || 0) + 1 >= totalQuestions
+
+  /* This screen is projected. The slide has to own the whole display the
+     moment it appears — stacking it above the answer panel made the host
+     scroll a projector, which is not a thing you can do mid-game. */
+  const explanationStage = showExplanation && !showBoard && explanationDoc ? (
+    <div className="fixed inset-0 z-[60] bg-[#0b0d12] flex flex-col animate-explain-enter">
+      <div className="shrink-0 flex items-center justify-between gap-4 px-4 sm:px-6 h-12 sm:h-14 border-b border-white/10">
+        <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold uppercase tracking-widest text-[#2dd4bf]">
+          <Lightbulb className="w-4 h-4" />
+          {t('explanationStageLabel')}
+        </span>
+        {!isPlayerPaced && (
+          <span className="text-xs sm:text-sm text-[#9a9eab] tabular-nums">
+            {t('questionLabel')}{' '}
+            <strong className="text-[#f2f0eb] font-medium">
+              {Math.max(0, gameState?.currentQuestionIndex ?? -1) + 1}
+            </strong>{' '}
+            / {totalQuestions}
+          </span>
+        )}
+      </div>
+
+      <div className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 md:p-6">
+        {/* Width fills, but is capped by what the remaining height allows at
+            16:9, so the slide is always as large as the screen permits and
+            never overflows into a scrollbar. */}
+        <div className="w-full aspect-video max-w-[calc((100vh-11rem)*16/9)] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+          <ExplanationSlide doc={explanationDoc} variant="stage" />
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-white/10 bg-[#12141a] px-3 sm:px-6 py-3 sm:py-4 flex items-center gap-3">
+        <Button
+          onClick={handleEndGame}
+          disabled={actionLoading}
+          variant="outline"
+          className="shrink-0 border-red-500/20 hover:border-red-500/50 text-red-400 hover:text-red-300 hover:bg-red-500/5 h-12 px-4 text-sm font-bold rounded-xl transition-all cursor-pointer gap-2"
+        >
+          <XCircle className="w-4 h-4" />
+          <span className="hidden sm:inline">{t('endQuickly')}</span>
+        </Button>
+        <Button
+          onClick={handleShowLeaderboard}
+          disabled={actionLoading}
+          size="lg"
+          className="flex-1 bg-[#e85d4c] hover:bg-[#d44e3e] disabled:bg-white/10 disabled:text-gray-500 text-white font-black h-12 sm:h-14 text-base sm:text-lg rounded-xl sm:rounded-2xl shadow-[0_10px_20px_-10px_rgba(232,93,76,0.5)] transition-all duration-300 cursor-pointer"
+        >
+          {actionLoading ? 'Moving Arena...' : t('showLeaderboard')}
+        </Button>
+      </div>
+    </div>
+  ) : null
+
+  /* Same treatment as the explanation slide, and for the same reason: this is
+     what the room looks at between two questions, so it owns the projector
+     rather than sitting in a panel the host would have to scroll to. */
+  const boardRows: StandingRow[] = (leaderboard || []).slice(0, 5).map((p: any, i: number) => ({
+    id: String(p.id ?? p.participantId ?? i),
+    nickname: p.username || 'Player',
+    score: p.totalPoints ?? 0,
+    rank: p.rank ?? i + 1,
+  }))
+
+  const leaderboardStage = showBoard ? (
+    <div className="fixed inset-0 z-[60] bg-[#0b0d12] flex flex-col animate-explain-enter">
+      <div className="shrink-0 flex items-center justify-between gap-4 px-4 sm:px-6 h-12 sm:h-14 border-b border-white/10">
+        <span className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold uppercase tracking-widest text-amber-400">
+          <Trophy className="w-4 h-4" />
+          {t('leaderboardStageLabel')}
+        </span>
+        {!isPlayerPaced && (
+          <span className="text-xs sm:text-sm text-[#9a9eab] tabular-nums">
+            {t('questionLabel')}{' '}
+            <strong className="text-[#f2f0eb] font-medium">
+              {Math.max(0, gameState?.currentQuestionIndex ?? -1) + 1}
+            </strong>{' '}
+            / {totalQuestions}
+          </span>
+        )}
+      </div>
+
+      <div className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 md:p-6">
+        <div className="w-full aspect-video max-w-[calc((100vh-11rem)*16/9)] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+          <LeaderboardSlide rows={boardRows} total={(leaderboard || []).length} variant="stage" />
+        </div>
+      </div>
+
+      <div className="shrink-0 border-t border-white/10 bg-[#12141a] px-3 sm:px-6 py-3 sm:py-4 flex items-center gap-3">
+        <Button
+          onClick={handleEndGame}
+          disabled={actionLoading}
+          variant="outline"
+          className="shrink-0 border-red-500/20 hover:border-red-500/50 text-red-400 hover:text-red-300 hover:bg-red-500/5 h-12 px-4 text-sm font-bold rounded-xl transition-all cursor-pointer gap-2"
+        >
+          <XCircle className="w-4 h-4" />
+          <span className="hidden sm:inline">{t('endQuickly')}</span>
+        </Button>
+        <Button
+          onClick={isLastQuestion ? handleEndGame : handleNextQuestion}
+          disabled={actionLoading}
+          size="lg"
+          className="flex-1 bg-[#e85d4c] hover:bg-[#d44e3e] disabled:bg-white/10 disabled:text-gray-500 text-white font-black h-12 sm:h-14 text-base sm:text-lg rounded-xl sm:rounded-2xl shadow-[0_10px_20px_-10px_rgba(232,93,76,0.5)] transition-all duration-300 cursor-pointer"
+        >
+          {actionLoading
+            ? 'Moving Arena...'
+            : (isLastQuestion ? t('endBattle') : t('nextBattleQuestion'))}
+        </Button>
+      </div>
+    </div>
+  ) : null
+
   return (
     <GameBackground variant="arena">
-      {startCountdown !== null && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-gradient-to-br from-[#12141a] via-[#1a1d26] to-[#12141a] select-none">
-          <div className="text-center space-y-8">
-            <p className="text-xl md:text-2xl xl:text-4xl font-bold tracking-wider text-indigo-400 uppercase animate-pulse">
-              {startCountdown === 0 ? 'Chuẩn bị...' : 'Trận đấu bắt đầu sau'}
-            </p>
-            <div className="relative h-40 sm:h-56 md:h-64 flex items-center justify-center">
-              <span
-                key={startCountdown}
-                className="text-8xl sm:text-9xl md:text-[10rem] font-extrabold text-[#e85d4c] drop-shadow-[0_0_50px_rgba(232,93,76,0.3)] animate-bounce inline-block select-none"
-              >
-                {startCountdown === 0 ? 'GO!' : startCountdown}
-              </span>
-            </div>
-            <p className="text-sm xl:text-lg text-gray-500 max-w-xs xl:max-w-lg mx-auto leading-relaxed">
-              {startCountdown === 0 ? 'Chúc các bạn may mắn!' : 'Hãy sẵn sàng trả lời nhanh để đạt điểm tối đa!'}
-            </p>
-          </div>
-        </div>
-      )}
+      {countdownOverlay}
+      {explanationStage}
+      {leaderboardStage}
       <div className="flex-1 px-3 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 pb-24 sm:pb-24 md:pb-24 lg:pb-8">
 
       <div className="max-w-7xl xl:max-w-[1500px] 2xl:max-w-[1750px] mx-auto space-y-8 z-10 relative">
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-[#2c313d] bg-[#1a1d26]/90 p-5 md:p-6" data-tour="host-room-header">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl md:text-2xl xl:text-3xl font-semibold text-[#f2f0eb] tracking-tight">Host room</h1>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-[#9a9eab]">
-              <span className="inline-flex items-center gap-1.5">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-[#2dd4bf]' : 'bg-[#e85d4c]'}`}
-                />
-                {connected ? 'Live' : 'Connecting…'}
-              </span>
-              <span>
-                Players{' '}
-                <strong className="text-[#f2f0eb] font-medium">
-                  {gameState?.participants?.length ?? 0}
-                  {gameState?.maxPlayers ? ` / ${gameState.maxPlayers}` : ''}
-                </strong>
-              </span>
-              {gameStarted && (
-                <span>
-                  Question{' '}
-                  <strong className="text-[#f2f0eb] font-medium">
-                    {(gameState?.currentQuestionIndex || 0) + 1}
-                  </strong>{' '}
-                  / {totalQuestions}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="text-left sm:text-right" data-tour="pin-display">
-            <p className="text-xs text-[#9a9eab]">PIN</p>
-            <p className="text-2xl lg:text-3xl xl:text-5xl break-all font-semibold tracking-[0.2em] font-mono text-[#e85d4c]">
-              {gameState?.sessionCode}
-            </p>
-          </div>
-        </header>
+        {/* No header once the game is live. It carried the PIN, the player
+            count and the question number: nobody joins mid-game by reading a
+            projector, and the question number now sits on the question card
+            itself. On a projector the header cost a band of the screen the
+            question needed. The lobby still shows all of it. */}
 
-        {!gameStarted ? (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8">
-            <div className="md:col-span-7 rounded-2xl border border-[#2c313d] bg-[#1a1d26]/90 p-6 md:p-8 flex flex-col min-h-[320px] sm:min-h-[420px] lg:min-h-[480px]">
-              <div className="flex items-start justify-between gap-4 mb-6">
-                <div>
-                  <h2 className="text-xl font-semibold text-[#f2f0eb]">Lobby</h2>
-                  <p className="text-sm text-[#9a9eab] mt-1">
-                    {gameState?.maxPlayers
-                      ? `Up to ${gameState.maxPlayers} players on your plan`
-                      : 'Waiting for players'}
-                  </p>
-                </div>
-                <span className="text-sm text-[#9a9eab] shrink-0">
-                  {gameState?.participants?.length ?? 0}
-                  {gameState?.maxPlayers ? ` / ${gameState.maxPlayers}` : ''}
-                </span>
-              </div>
-
-              {/* Privacy toggle */}
-              <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-[#2c313d] bg-[#12141a]/80 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-[#f2f0eb]">
-                    {gameState?.isPrivate ? 'Private room' : 'Open room'}
-                  </p>
-                  <p className="text-xs text-[#9a9eab] mt-0.5 leading-relaxed">
-                    {gameState?.isPrivate
-                      ? 'Only people with the PIN or invite link can join.'
-                      : 'Listed on the open lobby. Anyone can discover this PIN.'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={!!gameState?.isPrivate}
-                  aria-label="Private room"
-                  disabled={privacyLoading}
-                  onClick={handleTogglePrivacy}
-                  className={`relative before:absolute before:-inset-2.5 before:content-[''] h-7 w-12 shrink-0 rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e85d4c]/50 ${
-                    gameState?.isPrivate ? 'bg-[#e85d4c]' : 'bg-[#2c313d]'
-                  } ${privacyLoading ? 'opacity-50' : ''}`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ${
-                      gameState?.isPrivate ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto mb-6 rounded-xl border border-[#2c313d] bg-[#12141a]/60 p-4 min-h-[180px] max-h-[40vh] lg:max-h-[46vh]">
-                {(gameState?.participants?.length ?? 0) === 0 ? (
-                  <div className="h-full min-h-[160px] flex flex-col items-center justify-center text-center px-4">
-                    <p className="text-sm text-[#9a9eab] max-w-xs leading-relaxed">
-                      Share the QR or PIN. Players appear here as they join.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {gameState?.participants.map((p: any, i: number) => (
-                      <div
-                        key={`participant-${p.id || i}-${i}`}
-                        className="px-3 py-1.5 rounded-lg border border-[#2c313d] bg-[#1a1d26] text-sm font-medium text-[#f2f0eb] max-w-[45%] sm:max-w-48 truncate"
-                      >
-                        {p.username}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <Button
-                onClick={handleStartGame}
-                disabled={(gameState?.participants?.length ?? 0) === 0 || actionLoading}
-                size="lg"
-                data-tour="start-game-btn"
-                className="w-full h-12 bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] font-semibold rounded-xl disabled:opacity-40"
-              >
-                {actionLoading ? 'Starting…' : 'Start game'}
-              </Button>
-            </div>
-
-            <div className="md:col-span-5 rounded-2xl border border-[#2c313d] bg-[#1a1d26]/90 p-6 md:p-8 flex flex-col items-center justify-center text-center" data-tour="qr-invite">
-              <h3 className="text-lg font-semibold text-[#f2f0eb]">Invite</h3>
-              <p className="text-sm text-[#9a9eab] mt-1 mb-6 max-w-xs">
-                Scan to join, or copy the link for your group chat.
-              </p>
-
-              <div className="mb-6 rounded-xl border border-[#2c313d]">
-                {joinUrl ? (
-                  <QRCodeComponent value={joinUrl} size={320} className="w-full max-w-[200px] lg:max-w-[260px] xl:max-w-[320px]" />
-                ) : (
-                  <div className="aspect-square w-full max-w-45 flex items-center justify-center text-[#9a9eab] text-sm">
-                    Preparing QR…
-                  </div>
-                )}
-              </div>
-
-              <div className="w-full max-w-xs mb-6">
-                <p className="text-xs text-[#9a9eab] mb-2">PIN</p>
-                <div className="rounded-xl border border-[#2c313d] bg-[#12141a] py-3">
-                  <p className="text-3xl sm:text-4xl lg:text-5xl font-semibold tracking-[0.15em] break-all font-mono text-[#e85d4c] select-all">
-                    {gameState?.sessionCode}
-                  </p>
-                </div>
-              </div>
-
-              <Button
-                onClick={handleCopyLink}
-                variant="outline"
-                className="w-full max-w-sm border-[#2c313d] text-[#f2f0eb] hover:bg-white/5 h-11 rounded-xl"
-              >
-                {copied ? 'Link copied' : 'Copy invite link'}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          // Game Arena Active Playing Screen
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
+        {/* Game Arena Active Playing Screen */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
             {(() => {
               const config = (() => {
                 try {
@@ -711,43 +840,56 @@ export default function HostGameScreen() {
               const isPlayerPaced = config.game_mode === 'player_paced'
 
               if (isPlayerPaced) {
-                const scoreById = new Map(
-                  (leaderboard || []).map((p: any) => [String(p.id || p.participantId), p])
-                )
-                const standings = (gameState?.participants || [])
+                // Solo mode has no shared question: every player sits on a
+                // different one at a different moment, so a question on the
+                // projector shows something almost nobody in the room is looking
+                // at. The scoreboard is the only view that is true for everyone,
+                // so it gets the whole screen.
+                const byId = new Map<string, any>()
+                for (const p of gameState?.participants || []) {
+                  byId.set(String(p.id), { ...p })
+                }
+                for (const p of leaderboard || []) {
+                  const id = String(p.id ?? p.participantId)
+                  byId.set(id, { ...(byId.get(id) || {}), ...p, id })
+                }
+                // A player:answered push that landed since the last poll.
+                for (const [id, patch] of Object.entries(livePatches)) {
+                  if (byId.has(id)) byId.set(id, { ...byId.get(id), ...(patch as any) })
+                }
+
+                const rows = Array.from(byId.values())
                   .map((p: any) => {
-                    const scored = scoreById.get(String(p.id))
+                    // No current question left = this player reached the end.
+                    // Only meaningful in solo mode, which is where we are.
+                    const finished = p.finished ?? !p.currentQuestionId
                     return {
                       id: String(p.id),
-                      username: scored?.username || p.username || 'Player',
-                      totalPoints: scored?.totalPoints ?? 0,
-                      correctAnswers: scored?.correctAnswers ?? 0,
+                      username: p.username || 'Player',
+                      totalPoints: p.totalPoints ?? 0,
+                      correctAnswers: p.correctAnswers ?? 0,
+                      // Once the room is finished the API serves the archived
+                      // rankings, which carry no per-question counts — the rows
+                      // it built them from were deleted. A solo player only ever
+                      // finishes by answering every question, so the total is the
+                      // right number to show rather than a bar snapped back to 0.
+                      answeredCount: finished ? totalQuestions : (p.answeredCount ?? 0),
+                      finished,
                     }
                   })
-                  .sort((a: any, b: any) => b.totalPoints - a.totalPoints)
+                  .sort((a: any, b: any) => b.totalPoints - a.totalPoints || b.answeredCount - a.answeredCount)
 
-                // Fallback if participants empty but leaderboard has rows
-                const rows =
-                  standings.length > 0
-                    ? standings
-                    : (leaderboard || []).map((p: any) => ({
-                        id: String(p.id || p.participantId),
-                        username: p.username,
-                        totalPoints: p.totalPoints ?? 0,
-                        correctAnswers: p.correctAnswers ?? 0,
-                      }))
-
-                const soloQuestion = soloQuestions[soloIndex] || null
-                const soloContent = soloQuestion ? parseQuestionContent(soloQuestion.questionText) : null
+                const finishedCount = rows.filter((r: any) => r.finished).length
+                const allDone = rows.length > 0 && finishedCount === rows.length
 
                 return (
                   <div className="md:col-span-12 space-y-6">
                     <div className="bg-white/5 border border-white/10 rounded-3xl p-4 sm:p-6 md:p-8 backdrop-blur-md shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-6">
                       <div className="text-center sm:text-left">
-                        <span className="text-xs font-bold uppercase tracking-widest text-indigo-400">Solo Arena Mode Active</span>
-                        <h2 className="text-2xl md:text-3xl xl:text-4xl font-black text-white mt-1">Live Arena Scoreboard</h2>
+                        <span className="text-xs font-bold uppercase tracking-widest text-indigo-400">{t('soloMode')}</span>
+                        <h2 className="text-2xl md:text-3xl xl:text-4xl font-black text-white mt-1">{t('liveScoreboard')}</h2>
                         <p className="text-gray-400 text-sm mt-1">
-                          {rows.length} player{rows.length === 1 ? '' : 's'} in the arena — scores refresh live.
+                          {t('soloProgressSummary', { finished: finishedCount, total: rows.length })}
                         </p>
                       </div>
                       <Button
@@ -756,157 +898,85 @@ export default function HostGameScreen() {
                         size="lg"
                         className="bg-[#e85d4c] hover:bg-[#d44e3e] text-white font-extrabold w-full sm:w-auto whitespace-normal leading-tight text-sm sm:text-base px-5 sm:px-8 h-auto min-h-12 py-3 rounded-2xl shadow-lg transition-all border-none cursor-pointer"
                       >
-                        {actionLoading ? 'Closing Arena...' : 'End Game Arena & Show Podium 🏆'}
+                        {actionLoading ? t('closingArena') : t('endShowPodium')}
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
-                      {/* Question display — answers are hidden, players race at their own pace */}
-                      <div className="lg:col-span-8 bg-gradient-to-r from-purple-900/40 via-pink-900/10 to-indigo-900/40 border border-white/10 rounded-3xl p-4 sm:p-6 md:p-8 shadow-2xl backdrop-blur-sm relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-purple-500 to-blue-500"></div>
-                        <div className="flex items-center justify-between gap-4 mb-4">
-                          <span className="text-xs font-bold uppercase tracking-widest text-[#e85d4c]">
-                            Câu hỏi {soloQuestions.length > 0 ? soloIndex + 1 : 0} / {soloQuestions.length}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              onClick={() => setSoloIndex((i) => Math.max(0, i - 1))}
-                              disabled={soloIndex === 0 || soloQuestions.length === 0}
-                              variant="outline"
-                              size="sm"
-                              aria-label="Câu trước"
-                              className="border-white/10 text-white hover:bg-white/10 rounded-xl h-9 w-9 p-0 disabled:opacity-30"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              onClick={() => setSoloIndex((i) => Math.min(soloQuestions.length - 1, i + 1))}
-                              disabled={soloIndex >= soloQuestions.length - 1 || soloQuestions.length === 0}
-                              variant="outline"
-                              size="sm"
-                              aria-label="Câu sau"
-                              className="border-white/10 text-white hover:bg-white/10 rounded-xl h-9 w-9 p-0 disabled:opacity-30"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-
-                        {soloQuestions.length === 0 ? (
-                          <div className="py-16 text-center text-gray-500 font-bold">Đang tải câu hỏi…</div>
-                        ) : soloQuestion && soloContent ? (
-                          <>
-                            <h2 className="text-xl sm:text-2xl md:text-4xl xl:text-5xl break-words font-extrabold text-white leading-snug">
-                              {soloContent.text}
-                            </h2>
-                            {soloContent.mediaUrl && (
-                              <div className="mt-4 w-full aspect-video max-h-64 md:max-h-80 xl:max-h-[420px] rounded-2xl overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={soloContent.mediaUrl} alt="Question media" className="w-full h-full object-contain" />
-                              </div>
-                            )}
-
-                            {soloQuestion.type === 'short_answer' ? (
-                              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center backdrop-blur-md">
-                                <h3 className="text-lg font-bold text-white">Câu hỏi tự luận</h3>
-                                <p className="text-gray-400 text-sm mt-1">Người chơi tự nhập câu trả lời trên thiết bị của mình.</p>
-                              </div>
-                            ) : soloQuestion.type === 'pin_answer' ? (
-                              <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-6 text-center backdrop-blur-md">
-                                <h3 className="text-lg font-bold text-white flex items-center justify-center gap-2">
-                                  <MapPin className="w-4 h-4 text-[#e85d4c]" /> Câu hỏi ghim vị trí
-                                </h3>
-                                <p className="text-gray-400 text-sm mt-1">Người chơi ghim vị trí trên ảnh ở thiết bị của mình.</p>
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
-                                {(soloQuestion.options || []).map((option, index) => {
-                                  const badges = [
-                                    'from-rose-500 to-pink-600 text-white shadow-rose-500/20',
-                                    'from-blue-500 to-indigo-600 text-white shadow-blue-500/20',
-                                    'from-emerald-500 to-teal-600 text-white shadow-emerald-500/20',
-                                    'from-amber-400 to-orange-500 text-white shadow-amber-500/20',
-                                  ]
-                                  const icons = ['▲', '◆', '●', '■']
-                                  return (
-                                    <div
-                                      key={`solo-option-${option.id || index}-${index}`}
-                                      className="relative p-4 sm:p-5 xl:p-6 rounded-2xl border border-white/5 bg-white/5 backdrop-blur-md overflow-hidden"
-                                    >
-                                      <div className="flex items-center gap-3 min-w-0">
-                                        <div className={`flex items-center justify-center w-8 h-8 shrink-0 rounded-lg bg-gradient-to-r font-black text-sm shadow-md ${badges[index % badges.length]}`}>
-                                          {icons[index % icons.length]}
-                                        </div>
-                                        <div className="flex flex-col gap-2 min-w-0">
-                                          {option.optionText ? (
-                                            <div className="text-white font-bold text-base md:text-lg xl:text-2xl leading-snug">{option.optionText}</div>
-                                          ) : null}
-                                          {option.mediaUrl ? (
-                                            <div className="w-28 h-20 sm:w-36 sm:h-24 xl:w-52 xl:h-36 rounded-lg overflow-hidden border border-white/10 bg-black/40">
-                                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                                              <img src={option.mediaUrl} alt="Option media" className="w-full h-full object-contain" />
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
-                          </>
-                        ) : null}
+                    {allDone && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl px-5 py-4 text-emerald-300 font-bold text-center">
+                        {t('soloAllFinished')}
                       </div>
+                    )}
 
-                      {/* Standings sidebar */}
-                      <div className="lg:col-span-4 bg-white/5 border border-white/10 rounded-3xl p-4 sm:p-6 backdrop-blur-md shadow-2xl h-fit">
-                        <h3 className="text-lg font-black text-white uppercase tracking-wider mb-4 flex items-center gap-2">
-                          <span>🏆</span> Arena Standings
-                        </h3>
-                        <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-3">
-                          {rows.length === 0 ? (
-                            <div className="text-center py-12 text-gray-500 font-bold">
-                              No players in this room yet.
-                            </div>
-                          ) : (
-                            rows.map((player: any, i: number) => {
-                              const isTop3 = i < 3
-                              const medals = ['🥇', '🥈', '🥉']
-                              const colors = [
-                                'from-amber-500/10 to-transparent border-amber-500/25 text-amber-300',
-                                'from-slate-400/10 to-transparent border-slate-400/25 text-slate-300',
-                                'from-amber-700/10 to-transparent border-amber-700/25 text-amber-600',
-                              ]
-                              const cardBg = isTop3
-                                ? `bg-gradient-to-r ${colors[i]}`
-                                : 'bg-black/30 border-white/5 text-gray-300'
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-4 sm:p-6 md:p-8 backdrop-blur-md shadow-2xl">
+                      <h3 className="text-lg font-black text-white uppercase tracking-wider mb-5 flex items-center gap-2">
+                        <span>🏆</span> {t('standings')}
+                      </h3>
+                      {rows.length === 0 ? (
+                        <div className="text-center py-16 text-gray-500 font-bold">{t('noPlayers')}</div>
+                      ) : (
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4">
+                          {rows.map((player: any, i: number) => {
+                            const isTop3 = i < 3
+                            const medals = ['🥇', '🥈', '🥉']
+                            const colors = [
+                              'from-amber-500/10 to-transparent border-amber-500/25 text-amber-300',
+                              'from-slate-400/10 to-transparent border-slate-400/25 text-slate-300',
+                              'from-amber-700/10 to-transparent border-amber-700/25 text-amber-600',
+                            ]
+                            const cardBg = isTop3
+                              ? `bg-gradient-to-r ${colors[i]}`
+                              : 'bg-black/30 border-white/5 text-gray-300'
+                            const progress = totalQuestions > 0
+                              ? Math.min(100, Math.round((player.answeredCount / totalQuestions) * 100))
+                              : 0
 
-                              return (
-                                <div
-                                  key={`leaderboard-paced-${player.id || i}-${i}`}
-                                  className={`flex items-center justify-between p-3 sm:p-4 border rounded-2xl shadow-md ${cardBg}`}
-                                >
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="text-center shrink-0 min-w-8 w-auto px-1.5 h-8 rounded-lg bg-black/40 flex items-center justify-center font-black text-xs sm:text-sm">
-                                      {isTop3 ? medals[i] : `#${i + 1}`}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="font-bold text-white text-sm truncate">{player.username}</p>
-                                      <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-0.5">
-                                        {player.correctAnswers} correct
-                                      </p>
-                                    </div>
+                            return (
+                              <div
+                                key={`leaderboard-paced-${player.id || i}-${i}`}
+                                className={`flex items-center justify-between gap-3 p-3 sm:p-4 border rounded-2xl shadow-md ${cardBg}`}
+                              >
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                  <div className="text-center shrink-0 min-w-8 w-auto px-1.5 h-8 rounded-lg bg-black/40 flex items-center justify-center font-black text-xs sm:text-sm">
+                                    {isTop3 ? medals[i] : `#${i + 1}`}
                                   </div>
-                                  <div className="text-right shrink-0 pl-3">
-                                    <p className="font-black text-[#e85d4c] text-lg leading-none">{player.totalPoints}</p>
-                                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mt-1">pts</p>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <p className="font-bold text-white text-sm sm:text-base truncate">{player.username}</p>
+                                      {player.finished ? (
+                                        <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                          {t('soloFinished')}
+                                        </span>
+                                      ) : (
+                                        <span className="shrink-0 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                                          {t('soloPlaying')}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">
+                                      {t('soloRowProgress', {
+                                        answered: player.answeredCount,
+                                        total: totalQuestions,
+                                        correct: player.correctAnswers,
+                                      })}
+                                    </p>
+                                    <div className="mt-2 h-1.5 rounded-full bg-black/40 overflow-hidden">
+                                      <div
+                                        className={`h-full transition-[width] duration-500 ${player.finished ? 'bg-emerald-400' : 'bg-[#e85d4c]'}`}
+                                        style={{ width: `${progress}%` }}
+                                      />
+                                    </div>
                                   </div>
                                 </div>
-                              )
-                            })
-                          )}
+                                <div className="text-right shrink-0 pl-1">
+                                  <p className="font-black text-[#e85d4c] text-xl sm:text-2xl leading-none tabular-nums">{player.totalPoints}</p>
+                                  <p className="text-[10px] uppercase tracking-wider text-gray-500 mt-1">{t('pts')}</p>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -925,7 +995,19 @@ export default function HostGameScreen() {
                           return (
                             <div className="bg-gradient-to-r from-purple-900/40 via-pink-900/10 to-indigo-900/40 border border-white/10 rounded-3xl p-4 sm:p-6 md:p-8 shadow-2xl backdrop-blur-sm relative overflow-hidden">
                               <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-purple-500 to-blue-500"></div>
-                              <span className="text-xs font-bold uppercase tracking-widest text-[#e85d4c] mb-2 block">Active Quiz Question</span>
+                              {/* The counter lived in the room header, which is
+                                  gone during play; it belongs on the question
+                                  anyway, where the host is already looking. */}
+                              <div className="flex items-center justify-between gap-3 mb-2">
+                                <span className="text-xs font-bold uppercase tracking-widest text-[#e85d4c]">{t('activeQuestion')}</span>
+                                <span className="text-xs sm:text-sm text-[#9a9eab] tabular-nums shrink-0">
+                                  {t('questionLabel')}{' '}
+                                  <strong className="text-[#f2f0eb] font-medium">
+                                    {Math.max(0, gameState?.currentQuestionIndex ?? -1) + 1}
+                                  </strong>{' '}
+                                  / {totalQuestions}
+                                </span>
+                              </div>
                               {timeLeft !== null && !showAnswers && (
                                 <div className="flex items-center gap-3 mb-4">
                                   <span className={`inline-flex items-center justify-center min-w-14 px-3 py-1.5 rounded-xl border text-xl md:text-2xl xl:text-4xl font-black tabular-nums ${timeLeft <= 5 ? 'border-[#e85d4c]/50 bg-[#e85d4c]/10 text-[#e85d4c]' : 'border-white/10 bg-black/40 text-white'}`}>
@@ -945,7 +1027,7 @@ export default function HostGameScreen() {
                               {parsedContent.mediaUrl && currentQuestion.type !== 'pin_answer' && (
                                 <div className="mt-4 w-full aspect-video max-h-64 md:max-h-80 xl:max-h-[420px] rounded-2xl overflow-hidden border border-white/5 bg-black/40 flex items-center justify-center">
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img src={parsedContent.mediaUrl} alt="Question media" className="w-full h-full object-contain" />
+                                  <img src={parsedContent.mediaUrl} alt={t('questionMedia')} className="w-full h-full object-contain" />
                                 </div>
                               )}
 
@@ -954,7 +1036,7 @@ export default function HostGameScreen() {
                             <div className="mt-8 bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-6 md:p-8 text-center backdrop-blur-md shadow-lg">
                               {showAnswers ? (
                                 <div className="space-y-4">
-                                  <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">Correct Answer</span>
+                                  <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">{t('correctAnswer')}</span>
                                   <h3 className="text-2xl sm:text-3xl md:text-4xl font-black text-emerald-400 tracking-wide break-words">
                                     {currentQuestion.correctAnswer || 'No Answer Set'}
                                   </h3>
@@ -971,8 +1053,8 @@ export default function HostGameScreen() {
                                 </div>
                               ) : (
                                 <div className="space-y-3 py-6">
-                                  <h3 className="text-xl font-bold text-white">Short Answer Mode</h3>
-                                  <p className="text-gray-400 text-sm">Players are typing their answers. Results will be shown on Reveal.</p>
+                                  <h3 className="text-xl font-bold text-white">{t('shortAnswerMode')}</h3>
+                                  <p className="text-gray-400 text-sm">{t('shortAnswerHint')}</p>
                                 </div>
                               )}
                             </div>
@@ -987,7 +1069,7 @@ export default function HostGameScreen() {
                                 if (!media) {
                                   return (
                                     <div className="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-6 md:p-8 text-center text-gray-400">
-                                      Add an image to this pin question in the quiz editor.
+                                      {t('pinNeedsImage')}
                                     </div>
                                   )
                                 }
@@ -995,7 +1077,7 @@ export default function HostGameScreen() {
                                   <div className="space-y-3">
                                     <p className="text-sm xl:text-lg text-gray-400 flex items-center gap-1.5">
                                       <MapPin className="w-4 h-4 text-[#e85d4c]" />
-                                      {pinStats ? `${pinStats.total} pin${pinStats.total === 1 ? '' : 's'} placed` : 'Waiting for pins…'}
+                                      {pinStats ? t('pinsPlaced', { count: pinStats.total }) : t('waitingPins')}
                                       {showAnswers && pinStats ? ` · ${pinStats.correctCount} in range` : ''}
                                     </p>
                                     <div
@@ -1080,7 +1162,7 @@ export default function HostGameScreen() {
                                             {option.mediaUrl ? (
                                               <div className="w-28 h-20 sm:w-36 sm:h-24 xl:w-52 xl:h-36 rounded-lg overflow-hidden border border-white/10 bg-black/40">
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                <img src={option.mediaUrl} alt="Option media" className="w-full h-full object-contain" />
+                                                <img src={option.mediaUrl} alt={t('optionMedia')} className="w-full h-full object-contain" />
                                               </div>
                                             ) : null}
                                           </div>
@@ -1105,7 +1187,7 @@ export default function HostGameScreen() {
 
                                       {showAnswers && isCorrect && (
                                         <div className="text-xs font-black tracking-wider text-emerald-400 uppercase flex items-center gap-1.5">
-                                          <span className="text-sm">✓</span> Correct Choice
+                                          <span className="text-sm">✓</span> {t('correctChoice')}
                                         </div>
                                       )}
                                     </div>
@@ -1127,23 +1209,22 @@ export default function HostGameScreen() {
                               size="lg"
                               className="w-full bg-white text-black hover:bg-white/90 disabled:bg-white/10 disabled:text-gray-500 h-14 text-lg font-black rounded-2xl shadow-[0_4px_20px_rgba(255,255,255,0.08)] hover:shadow-[0_4px_25px_rgba(255,255,255,0.15)] transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer border-none"
                             >
-                              {currentQuestion.type === 'poll' ? 'Show Poll Results' : 'Reveal Correct Answer'}
+                              {currentQuestion.type === 'poll' ? t('showPollResults') : t('reveal')}
                             </Button>
                           ) : (
+                            <>
+                            {/* The scoreboard comes between the answer and the
+                                next question — after the explanation slide when
+                                the question has one, which raises itself. */}
                             <Button
-                              onClick={
-                                (gameState?.currentQuestionIndex || 0) + 1 < totalQuestions
-                                  ? handleNextQuestion
-                                  : handleEndGame
-                              }
+                              onClick={handleShowLeaderboard}
                               disabled={actionLoading}
                               size="lg"
                               className="w-full bg-[#e85d4c] hover:bg-[#d44e3e] disabled:from-purple-600/20 disabled:to-indigo-600/20 text-white font-black h-14 whitespace-normal leading-tight text-base sm:text-lg rounded-2xl shadow-[0_10px_20px_-10px_rgba(168,85,247,0.5)] transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer"
                             >
-                              {actionLoading 
-                                ? 'Moving Arena...' 
-                                : ((gameState?.currentQuestionIndex || 0) + 1 < totalQuestions ? 'Next Battle Question ➔' : 'End Battle & Show Podium 🏆')}
+                              {actionLoading ? 'Moving Arena...' : t('showLeaderboard')}
                             </Button>
+                            </>
                           )}
                           <Button
                             onClick={handleEndGame}
@@ -1152,7 +1233,7 @@ export default function HostGameScreen() {
                             className="w-full border-red-500/20 hover:border-red-500/50 text-red-400 hover:text-red-300 hover:bg-red-500/5 h-12 text-sm font-bold rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-2"
                           >
                             <XCircle className="w-4 h-4" />
-                            End Game Quickly
+                            {t('endQuickly')}
                           </Button>
                         </div>
                       </>
@@ -1164,15 +1245,15 @@ export default function HostGameScreen() {
                     <div className="mb-6 flex items-center gap-3">
                       <div className="text-xl">🏆</div>
                       <div>
-                        <h3 className="text-lg font-black text-white tracking-wider">Lobby Leaderboard</h3>
-                        <p className="text-xs text-gray-400">Live score updates</p>
+                        <h3 className="text-lg font-black text-white tracking-wider">{t('lobbyLeaderboard')}</h3>
+                        <p className="text-xs text-gray-400">{t('liveScores')}</p>
                       </div>
                     </div>
 
                     <div className="space-y-3 max-h-none md:max-h-[45vh] lg:max-h-[65vh] overflow-y-auto pr-1 scrollbar-thin">
                       {leaderboard.length === 0 ? (
                         <div className="text-center py-12">
-                          <p className="text-gray-500 text-sm font-semibold">No points scored yet.</p>
+                          <p className="text-gray-500 text-sm font-semibold">{t('noPoints')}</p>
                         </div>
                       ) : (
                         leaderboard.slice(0, 20).map((player, i) => {
@@ -1208,7 +1289,7 @@ export default function HostGameScreen() {
                               {/* Points score */}
                               <div className="text-right shrink-0 pl-2">
                                 <p className="font-black text-[#e85d4c] text-lg leading-none">{player.totalPoints}</p>
-                                <p className="text-[9px] uppercase tracking-wider text-gray-500 mt-1">pts</p>
+                                <p className="text-[9px] uppercase tracking-wider text-gray-500 mt-1">{t('pts')}</p>
                               </div>
                             </div>
                           )
@@ -1219,11 +1300,10 @@ export default function HostGameScreen() {
                 </>
               )
             })()}
-          </div>
-        )}
+        </div>
       </div>
       </div>
-      <TourButton tour={hostRoomTour} label="Hướng dẫn" position="bottom-right" />
+      <TourButton tour={hostRoomTour(tTour)} label={t('guide')} position="bottom-right" />
     </GameBackground>
   )
 }
