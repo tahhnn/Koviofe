@@ -19,15 +19,20 @@ import {
   updateAnswerOption,
   deleteAnswerOption,
   createGameSession,
-  updateQuizThemeConfig,
   updateQuestionExplanation,
   updateQuizExplanationDuration,
   importQuestionsFromQuiz,
+  updateQuizBranding,
+  updateQuizSharing,
+  duplicateQuiz,
 } from '@/app/actions/quizzes'
 import { ExplanationEditor } from '@/components/explanation-editor'
 import { GameBackground } from '@/components/game-background'
 import { useToast } from '@/components/ui/toast'
-import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus, Settings, SlidersHorizontal } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus, Settings, SlidersHorizontal, Eye, Globe } from 'lucide-react'
+import { QuizBrandingPanel } from '@/components/quiz-branding-panel'
+import { parseQuizTheme, type BrandingPatch } from '@/lib/theme'
+import { getMyLicense } from '@/app/actions/license'
 import { BrandMark } from '@/components/brand-mark'
 import { TourButton } from '@/components/tour-button'
 import { quizEditorTour } from '@/lib/tours'
@@ -68,11 +73,42 @@ export default function QuizEditorPage() {
 
   // Quiz settings states
   const [quizSettingsOpen, setQuizSettingsOpen] = useState(false)
+  // Null until the license is known: the branding slots render locked in the
+  // meantime rather than flashing unlocked and then taking the controls away.
+  const [brandingAllowed, setBrandingAllowed] = useState<boolean | null>(null)
   // Mobile slide-settings bottom sheet
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [pinAspect, setPinAspect] = useState<number | null>(null)
+  const [sharingSaving, setSharingSaving] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
+
+  // What this viewer may do, as the server reported it. The page mirrors the
+  // answer; it never decides. Undefined means an API that predates sharing, and
+  // getQuizById already resolves that to "allowed".
+  //
+  // canEdit and isOwner are independent again: a shared quiz its owner opened
+  // for editing gives canEdit without isOwner, and that reader may change the
+  // questions but never the sharing flags or the quiz itself.
+  const canEdit = quiz?.canEdit !== false
+  const isOwner = quiz?.isOwner !== false
+  const canCopy = quiz?.canCopy !== false
+
+  /**
+   * Guard at the top of every mutating handler.
+   *
+   * The body is wrapped in a disabled fieldset when the quiz is read-only, so
+   * this should be unreachable — which is exactly why it is here. A control
+   * that escapes the fieldset (a div with onClick, a keyboard shortcut, a
+   * future addition) would otherwise fire a write the API will reject with a
+   * bare error instead of telling the reader why nothing happened.
+   */
+  const ensureEditable = () => {
+    if (canEdit) return true
+    toast.error(t('readOnlyTitle'), t('readOnlyDuplicateHint'))
+    return false
+  }
 
   useEffect(() => {
     const loadQuiz = async () => {
@@ -103,6 +139,32 @@ export default function QuizEditorPage() {
       setActiveQuestionId(quiz.questions[0].id)
     }
   }, [quiz, activeQuestionId])
+
+  // The branding slots need to know the plan before they render. Fetched once
+  // here rather than inside the panel so opening and closing the settings
+  // modal does not re-ask on every open.
+  useEffect(() => {
+    let cancelled = false
+    getMyLicense()
+      .then((snapshot) => {
+        if (cancelled) return
+        // Enforcement off means every gate is open; treat it as allowed rather
+        // than reading the plan, which is what the backend does too.
+        const allowed =
+          snapshot === null ||
+          snapshot.enforcement === false ||
+          !!snapshot.entitlements?.allow_custom_branding
+        setBrandingAllowed(allowed)
+      })
+      .catch(() => {
+        // A license lookup that fails must not lock a paying host out of their
+        // own branding; the backend is the one that actually decides.
+        if (!cancelled) setBrandingAllowed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Keep the active slide visible in the sidebar when navigating many questions
   const slidesRef = useRef<HTMLDivElement>(null)
@@ -143,6 +205,7 @@ export default function QuizEditorPage() {
   }, [activeQuestionId, activeMediaUrlForAspect])
 
   const handleAddQuestion = async () => {
+    if (!ensureEditable()) return
     setSaving(true)
     try {
       const newQuestion = await addQuestion(quizId, 'New Question Text', 30)
@@ -158,6 +221,7 @@ export default function QuizEditorPage() {
   }
 
   const handleDeleteQuestion = (qId: string) => {
+    if (!ensureEditable()) return
     toast.confirm(
       t('deleteQuestion'),
       async () => {
@@ -186,6 +250,7 @@ export default function QuizEditorPage() {
   }
 
   const handleSaveQuizSettings = async () => {
+    if (!ensureEditable()) return
     if (!editTitle.trim()) {
       toast.error(t('error'), t('titleRequired'))
       return
@@ -209,6 +274,7 @@ export default function QuizEditorPage() {
   }
 
   const handleAddOption = async (questionId: string) => {
+    if (!ensureEditable()) return
     setSaving(true)
     try {
       const newOption = await addAnswerOption(quizId, questionId, 'New Answer Choice', false)
@@ -240,6 +306,7 @@ export default function QuizEditorPage() {
   }
 
   const handleQuestionTextBlur = async (questionId: string, newText: string, timeLimit: number, type: string, correctAns: string) => {
+    if (!ensureEditable()) return
     try {
       const q = quiz.questions.find((item: any) => item.id === questionId)
       const mediaUrl = q ? parseQuestionContent(q.questionText).mediaUrl : ''
@@ -260,6 +327,7 @@ export default function QuizEditorPage() {
   }
 
   const handleQuestionTextUpdate = async (questionId: string, newContent: string, timeLimit: number, type: string, correctAns: string) => {
+    if (!ensureEditable()) return
     try {
       await trackSave(updateQuestion(questionId, newContent, timeLimit, type, correctAns))
       setQuiz((prev: any) => ({
@@ -276,6 +344,7 @@ export default function QuizEditorPage() {
   }
 
   const handleQuestionTimeChange = async (questionId: string, contentStr: string, newTimeLimit: number, type: string, correctAns: string) => {
+    if (!ensureEditable()) return
     try {
       await trackSave(updateQuestion(questionId, contentStr, newTimeLimit, type, correctAns))
       setQuiz((prev: any) => ({
@@ -292,6 +361,7 @@ export default function QuizEditorPage() {
   }
 
   const handleQuestionTypeChange = async (questionId: string, contentStr: string, timeLimit: number, newType: string) => {
+    if (!ensureEditable()) return
     try {
       let correctAns = ''
       if (newType === 'true_false') correctAns = 'A'
@@ -310,6 +380,7 @@ export default function QuizEditorPage() {
   }
 
   const handleQuestionCorrectAnswerBlur = async (questionId: string, contentStr: string, timeLimit: number, type: string, correctAns: string) => {
+    if (!ensureEditable()) return
     try {
       await trackSave(updateQuestion(questionId, contentStr, timeLimit, type, correctAns))
       setQuiz((prev: any) => ({
@@ -324,6 +395,7 @@ export default function QuizEditorPage() {
   }
 
   const handleOptionTextBlur = async (questionId: string, optionId: string, newText: string, isCorrect: boolean) => {
+    if (!ensureEditable()) return
     try {
       const q = quiz.questions.find((item: any) => item.id === questionId)
       const opt = q?.options.find((o: any) => o.id === optionId)
@@ -350,6 +422,7 @@ export default function QuizEditorPage() {
   }
 
   const handleUpdateOption = async (questionId: string, optionId: string, optionText: string, isCorrect: boolean, mediaUrl: string = '') => {
+    if (!ensureEditable()) return
     try {
       await trackSave(updateAnswerOption(quizId, questionId, optionId, optionText, isCorrect, mediaUrl))
       setQuiz((prev: any) => ({
@@ -387,6 +460,7 @@ export default function QuizEditorPage() {
   }
 
   const handleDeleteOption = async (optionId: string, questionId: string) => {
+    if (!ensureEditable()) return
     try {
       await deleteAnswerOption(quizId, questionId, optionId)
       setQuiz((prev: any) => ({
@@ -405,6 +479,32 @@ export default function QuizEditorPage() {
     }
   }
 
+  const quizTheme = parseQuizTheme(quiz?.themeConfig)
+
+  // Optimistic like the explanation duration above it: an upload has already
+  // happened by the time this runs, and a slow PUT must not make the preview
+  // snap back to the empty slot the host just filled.
+  const handleBrandingChange = async (patch: BrandingPatch) => {
+    if (!ensureEditable()) return
+    setQuiz((prev: any) => {
+      let config: Record<string, any> = {}
+      try {
+        config = JSON.parse(prev?.themeConfig || '{}') || {}
+      } catch {}
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === '') delete config[key]
+        else config[key] = value
+      }
+      return { ...prev, themeConfig: JSON.stringify(config) }
+    })
+    try {
+      await trackSave(updateQuizBranding(quizId, patch))
+    } catch (error) {
+      console.error('Error saving branding:', error)
+      toast.apiError(error, (href) => router.push(href))
+    }
+  }
+
   const explanationDuration = (() => {
     try {
       const n = Number(JSON.parse(quiz?.themeConfig || '{}')?.explanation_duration)
@@ -415,6 +515,7 @@ export default function QuizEditorPage() {
   })()
 
   const handleExplanationSave = async (questionId: string, json: string) => {
+    if (!ensureEditable()) return
     // Optimistic: the editor already renders from its own copy, and a slow PUT
     // must not make the preview snap back to the previous slide.
     setQuiz((prev: any) => ({
@@ -432,6 +533,7 @@ export default function QuizEditorPage() {
   }
 
   const handleExplanationDurationChange = async (seconds: number) => {
+    if (!ensureEditable()) return
     setQuiz((prev: any) => {
       let config: Record<string, any> = {}
       try {
@@ -443,6 +545,51 @@ export default function QuizEditorPage() {
       await trackSave(updateQuizExplanationDuration(quizId, seconds))
     } catch (error) {
       console.error('Error saving explanation duration:', error)
+    }
+  }
+
+  /**
+   * Publish / unpublish, and open or close editing of the original.
+   *
+   * Owner only, and the API enforces that independently: this endpoint is the
+   * one place the flags can move, precisely so that edit rights on a shared
+   * quiz can never reach them.
+   */
+  const handleSharingChange = async (nextPublic: boolean, nextAllowEdit: boolean) => {
+    setSharingSaving(true)
+    try {
+      const saved = await updateQuizSharing(quizId, nextPublic, nextAllowEdit)
+      // Take the server's answer rather than the requested one: unpublishing
+      // clears edit rights there, and the toggle must show what actually holds.
+      setQuiz((prev: any) =>
+        prev ? { ...prev, isPublic: saved.isPublic, allowEdit: saved.allowEdit } : prev
+      )
+      toast.success(t('shareSaved'))
+    } catch (error: any) {
+      console.error('Error updating sharing:', error)
+      toast.apiError(error?.message || error, (href) => router.push(href))
+    } finally {
+      setSharingSaving(false)
+    }
+  }
+
+  /**
+   * Take an independent copy into the reader's own quizzes and open it.
+   *
+   * This is the whole answer to "I want to change a shared quiz": the original
+   * keeps exactly one writer, and the reader gets something they fully own.
+   */
+  const handleDuplicate = async () => {
+    setDuplicating(true)
+    try {
+      const copy = await duplicateQuiz(quizId)
+      toast.success(t('duplicated'), copy.title)
+      router.push(`/quizzes/${copy.id}`)
+    } catch (error: any) {
+      console.error('Error duplicating quiz:', error)
+      toast.apiError(error?.message || error, (href) => router.push(href))
+    } finally {
+      setDuplicating(false)
     }
   }
 
@@ -459,20 +606,14 @@ export default function QuizEditorPage() {
       // License/Pro gating deferred — Solo is open for all hosts for now.
       // See backend/internal/pkg/license/LICENSE_DEFERRED.md
       //
-      // Merge, do not replace. This used to write a fresh object holding only
-      // game_mode, which wiped every other key in theme_config at the moment
-      // the room was created — so a quiz-level setting could never reach a
-      // game. explanation_duration is read from the room's copy of this config.
-      let existingConfig: Record<string, any> = {}
-      try {
-        existingConfig = JSON.parse(quiz?.themeConfig || '{}') || {}
-      } catch {}
-      const modeConfig = JSON.stringify({
-        ...existingConfig,
-        game_mode: mode === 'solo' ? 'player_paced' : 'host_paced',
-      })
-      await updateQuizThemeConfig(quizId, modeConfig)
-      const session = await createGameSession(quizId)
+      // The mode goes to the room, not the quiz. It used to be written onto
+      // the quiz here, one line before the room was created, which made
+      // starting a game a write to the quiz: picking Solo changed what the
+      // author's quiz was saved as for everyone, and on a quiz shared by
+      // somebody else it failed with 403 and no game could start at all. The
+      // API merges it into the room's own copy of theme_config, which is what
+      // every gameplay step reads anyway.
+      const session = await createGameSession(quizId, true, mode)
       router.push(`/host/${session.id}`)
     } catch (error: any) {
       console.error('Error starting game:', error)
@@ -526,6 +667,7 @@ export default function QuizEditorPage() {
   }
 
   const confirmImport = async () => {
+    if (!ensureEditable()) return
     if (!importSourceId || importSelected.size === 0) {
       toast.error(t('pickAtLeastOne'))
       return
@@ -559,6 +701,7 @@ export default function QuizEditorPage() {
   }
 
   const handleGifSelect = async (url: string) => {
+    if (!ensureEditable()) return
     const target = giphyTargetRef.current
     if (!target) return
     const { type, questionId, optionId } = target
@@ -602,6 +745,7 @@ export default function QuizEditorPage() {
   }
 
   const handleRemoveGif = async (type: 'question' | 'option', questionId: string, optionId?: string) => {
+    if (!ensureEditable()) return
     if (type === 'question') {
       const q = quiz.questions.find((item: any) => item.id === questionId)
       if (q) {
@@ -856,7 +1000,7 @@ export default function QuizEditorPage() {
             <div className="w-full sm:w-auto grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
               <Button
                 onClick={openImportPanel}
-                disabled={saving}
+                disabled={saving || !canEdit}
                 variant="outline"
                 title={t('importFromYours')}
                 className="border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-[#12141a] font-semibold px-4 rounded-xl h-10 text-sm gap-1.5"
@@ -889,6 +1033,57 @@ export default function QuizEditorPage() {
         </div>
       </header>
 
+      {canEdit && !isOwner && (
+        <div className="border-b border-sky-500/20 bg-sky-500/10 px-4 sm:px-6 py-3">
+          <div className="container mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between text-sm text-sky-200">
+            <span className="flex items-start sm:items-center gap-2.5">
+              <Globe className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+              <span>{t('sharedEditableBanner')}</span>
+            </span>
+            {/* Offered here too: editing the shared original is allowed, but
+                somebody who only wants their own version should not have to go
+                back to the dashboard to get one. */}
+            {canCopy && (
+              <Button
+                size="sm"
+                onClick={handleDuplicate}
+                disabled={duplicating}
+                className="shrink-0 bg-sky-500/20 hover:bg-sky-500/30 text-sky-100 border border-sky-500/30 font-bold text-xs rounded-xl h-10 sm:h-9 flex items-center gap-1.5"
+              >
+                <CopyPlus className="w-3.5 h-3.5" />
+                {duplicating ? t('duplicating') : t('duplicateToMine')}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+      {!canEdit && (
+        <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 sm:px-6 py-3">
+          <div className="container mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between text-sm text-amber-200">
+            <span className="flex items-start sm:items-center gap-2.5">
+              <Eye className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+              <span>{t('readOnlyBanner')} {t('readOnlyDuplicateHint')}</span>
+            </span>
+            {canCopy && (
+              <Button
+                size="sm"
+                onClick={handleDuplicate}
+                disabled={duplicating}
+                className="shrink-0 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 border border-amber-500/30 font-bold text-xs rounded-xl h-10 sm:h-9 flex items-center gap-1.5"
+              >
+                <CopyPlus className="w-3.5 h-3.5" />
+                {duplicating ? t('duplicating') : t('duplicateToMine')}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* A disabled fieldset turns off every form control inside it in one
+          place, which is the point: the editor has dozens, and any one of them
+          missed would be an input that looks live on a quiz the reader may not
+          change. `contents` keeps the flex layout it wraps. */}
+      <fieldset disabled={!canEdit} className="contents">
       <div className="flex flex-col lg:flex-row flex-1 min-h-0 lg:h-[calc(100dvh-73px)] overflow-visible lg:overflow-hidden font-sans">
         <aside className="w-full lg:w-64 lg:shrink-0 border-b lg:border-b-0 lg:border-r border-[#2c313d] bg-[#1a1d26] flex flex-col h-auto lg:h-full select-none shrink-0" data-tour="question-slides">
           <div className="px-4 py-2 lg:p-4 border-b border-[#2c313d] flex items-center justify-between shrink-0">
@@ -1267,6 +1462,7 @@ export default function QuizEditorPage() {
           {slideSettingsContent}
         </aside>
       </div>
+      </fieldset>
 
       {activeQuestion && (
         <button
@@ -1425,6 +1621,67 @@ export default function QuizEditorPage() {
                   className={`w-full bg-[#12141a] border border-[#2c313d] focus:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] rounded-xl p-3 focus:outline-none text-sm resize-none`}
                 />
               </div>
+
+              {isOwner && (
+                <div className="border-t border-[#2c313d] pt-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-[#9a9eab]" />
+                    <h3 className="text-sm font-semibold text-[#f2f0eb]">{t('shareTitle')}</h3>
+                  </div>
+                  <p className="text-xs text-[#9a9eab] leading-relaxed">{t('shareHint')}</p>
+
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!quiz.isPublic}
+                      disabled={sharingSaving}
+                      onChange={(e) => handleSharingChange(e.target.checked, !!quiz.allowEdit)}
+                      className="mt-0.5 h-4 w-4 shrink-0 accent-[#e85d4c] cursor-pointer"
+                    />
+                    <span className="text-sm text-[#c5c2ba]">{t('sharePublic')}</span>
+                  </label>
+
+                  {quiz.isPublic && (
+                    <>
+                      <div className="pl-7 space-y-1.5">
+                        <p className="text-xs text-amber-300/80 leading-relaxed">
+                          {t('shareAnswersWarning')}
+                        </p>
+                        {/* Said plainly because it is the one part of sharing
+                            that cannot be undone: unsharing stops new copies,
+                            it does not reach the ones already taken. */}
+                        <p className="text-xs text-amber-300/80 leading-relaxed">
+                          {t('shareCopyWarning')}
+                        </p>
+                      </div>
+
+                      <label className="flex items-start gap-3 cursor-pointer pl-7">
+                        <input
+                          type="checkbox"
+                          checked={!!quiz.allowEdit}
+                          disabled={sharingSaving}
+                          onChange={(e) => handleSharingChange(true, e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-[#e85d4c] cursor-pointer"
+                        />
+                        <span className="text-sm text-[#c5c2ba]">{t('shareAllowEdit')}</span>
+                      </label>
+                      {quiz.allowEdit && (
+                        <p className="text-xs text-amber-300/80 leading-relaxed pl-14">
+                          {t('shareAllowEditWarning')}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div className="border-t border-[#2c313d] pt-4">
+                <QuizBrandingPanel
+                  theme={quizTheme}
+                  onChange={handleBrandingChange}
+                  allowed={brandingAllowed === true}
+                />
+              </div>
             </div>
 
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-2">
@@ -1437,7 +1694,7 @@ export default function QuizEditorPage() {
               </Button>
               <Button
                 onClick={handleSaveQuizSettings}
-                disabled={saving}
+                disabled={saving || !canEdit}
                 className="h-11 w-full sm:h-10 sm:w-auto bg-[#e85d4c] hover:bg-[#d44e3e] text-white px-5 rounded-xl border-none"
               >
                 {saving ? t('saving') : t('saveSettings')}

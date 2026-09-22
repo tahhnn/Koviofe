@@ -22,7 +22,8 @@ import {
 } from '@/components/explanation-slide'
 import { LeaderboardSlide, type StandingRow } from '@/components/leaderboard-slide'
 import { authClient } from '@/lib/auth-client'
-import { GameBackground } from '@/components/game-background'
+import { ThemedGameBackground } from '@/components/game-background'
+import { parseQuizTheme } from '@/lib/theme'
 import { HostLobby } from '@/components/host-lobby'
 import { TourButton } from '@/components/tour-button'
 import { hostRoomTour } from '@/lib/tours'
@@ -601,11 +602,11 @@ export default function HostGameScreen() {
 
   if (loading) {
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="host">
         <div className="flex-1 flex items-center justify-center">
           <p className="text-[#9a9eab] text-sm">{t('loading')}</p>
         </div>
-      </GameBackground>
+      </ThemedGameBackground>
     )
   }
 
@@ -614,15 +615,15 @@ export default function HostGameScreen() {
     if (accessError.requiresLogin) {
       void authClient.signOut()
       return (
-        <GameBackground variant="arena">
+        <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="host">
           <div className="flex-1 flex items-center justify-center">
             <p className="text-[#9a9eab] text-sm">{t('redirectSignIn')}</p>
           </div>
-        </GameBackground>
+        </ThemedGameBackground>
       )
     }
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="host">
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-8 space-y-5 text-center">
             <h1 className="text-xl font-semibold text-[#f2f0eb]">{shownError.title}</h1>
@@ -648,7 +649,7 @@ export default function HostGameScreen() {
             </div>
           </div>
         </div>
-      </GameBackground>
+      </ThemedGameBackground>
     )
   }
 
@@ -679,7 +680,7 @@ export default function HostGameScreen() {
   // gets the whole viewport and the PIN gets the biggest type on it.
   if (!gameStarted) {
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="host">
         {countdownOverlay}
         <HostLobby
           sessionCode={gameState?.sessionCode}
@@ -694,9 +695,9 @@ export default function HostGameScreen() {
           onCopyLink={handleCopyLink}
           onStart={handleStartGame}
           starting={actionLoading}
+          logoUrl={parseQuizTheme(gameState?.themeConfig).logoUrl || undefined}
         />
-        <TourButton tour={hostRoomTour(tTour)} label={t('guide')} position="bottom-right" />
-      </GameBackground>
+      </ThemedGameBackground>
     )
   }
 
@@ -814,13 +815,22 @@ export default function HostGameScreen() {
   ) : null
 
   return (
-    <GameBackground variant="arena">
+    <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="host">
       {countdownOverlay}
       {explanationStage}
       {leaderboardStage}
-      <div className="flex-1 px-3 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 pb-24 sm:pb-24 md:pb-24 lg:pb-8">
+      {/* Vertically centred. With the leaderboard sidebar gone the question is
+          the only thing on the screen, and pinning it to the top left the lower
+          half of a projector empty. */}
+      <div className="flex-1 flex flex-col justify-center px-3 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8 pb-24 sm:pb-24 md:pb-24 lg:pb-8">
 
-      <div className="max-w-7xl xl:max-w-[1500px] 2xl:max-w-[1750px] mx-auto space-y-8 z-10 relative">
+      {/* Narrower than the two-column layout it replaces. A single column
+          stretched to 1750px puts a question on one very long line, and reading
+          it from the back of a hall means sweeping the whole wall; capping the
+          measure keeps the eye in one place. Solo mode still wants the full
+          width — its scoreboard is a table, not prose — so the cap is applied
+          on the classic branch rather than here. */}
+      <div className="w-full max-w-7xl xl:max-w-[1500px] 2xl:max-w-[1750px] mx-auto space-y-8 z-10 relative">
         {/* No header once the game is live. It carried the PIN, the player
             count and the question number: nobody joins mid-game by reading a
             projector, and the question number now sits on the question card
@@ -982,11 +992,20 @@ export default function HostGameScreen() {
                 )
               }
 
-              // Classic Mode: Left Question panel, Right Leaderboard sidebar
+              // Classic Mode: one full-width question panel.
               return (
                 <>
-                  {/* Main Question & Answer Panel */}
-                  <div className="md:col-span-12 lg:col-span-8 space-y-6">
+                  {/* Main Question & Answer Panel.
+                      Full width now: the live leaderboard sidebar that used to
+                      sit beside it is gone. It was the only place the host saw
+                      scores move during a question, but it cost a third of the
+                      projector for a list nobody in the room could read, and
+                      the dedicated leaderboard slide still shows the same data
+                      full screen whenever the host calls for it. */}
+                  <div
+                    className="col-span-12 mx-auto w-full space-y-6"
+                    style={{ maxWidth: 'clamp(720px, 78vw, 1600px)' }}
+                  >
                     {currentQuestion && (
                       <>
                         {/* Current Question Glass Card */}
@@ -1021,7 +1040,10 @@ export default function HostGameScreen() {
                                   </div>
                                 </div>
                               )}
-                              <h2 className="text-xl sm:text-2xl md:text-4xl xl:text-5xl break-words font-extrabold text-white leading-snug">
+                              <h2
+                                className="break-words font-extrabold text-white leading-snug"
+                                style={{ fontSize: 'clamp(1.25rem, min(3.2vw, 5.5vh), 3.75rem)' }}
+                              >
                                 {parsedContent.text}
                               </h2>
                               {parsedContent.mediaUrl && currentQuestion.type !== 'pin_answer' && (
@@ -1152,12 +1174,24 @@ export default function HostGameScreen() {
                                     <div className="relative z-10 space-y-4">
                                       <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3 min-w-0 flex-1">
-                                          <div className={`flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-r font-black text-sm shadow-md ${badgeColor}`}>
+                                          <div
+                                            className={`flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-r font-black shadow-md ${badgeColor}`}
+                                            style={{
+                                              width: 'clamp(2rem, min(2.4vw, 4vh), 3rem)',
+                                              height: 'clamp(2rem, min(2.4vw, 4vh), 3rem)',
+                                              fontSize: 'clamp(0.75rem, min(1.1vw, 1.9vh), 1.25rem)',
+                                            }}
+                                          >
                                             {icon}
                                           </div>
                                           <div className="flex flex-col gap-2 min-w-0">
                                             {option.optionText ? (
-                                              <div className="text-white font-bold text-base md:text-lg xl:text-2xl leading-snug">{option.optionText}</div>
+                                              <div
+                                                className="text-white font-bold leading-snug"
+                                                style={{ fontSize: 'clamp(0.95rem, min(1.7vw, 2.9vh), 2rem)' }}
+                                              >
+                                                {option.optionText}
+                                              </div>
                                             ) : null}
                                             {option.mediaUrl ? (
                                               <div className="w-28 h-20 sm:w-36 sm:h-24 xl:w-52 xl:h-36 rounded-lg overflow-hidden border border-white/10 bg-black/40">
@@ -1239,64 +1273,6 @@ export default function HostGameScreen() {
                       </>
                     )}
                   </div>
-
-                  {/* Esports-style Live Leaderboard Sidebar */}
-                  <div className="md:col-span-12 lg:col-span-4 bg-white/5 border border-white/10 rounded-3xl p-4 sm:p-5 lg:p-6 backdrop-blur-md shadow-2xl h-fit flex flex-col">
-                    <div className="mb-6 flex items-center gap-3">
-                      <div className="text-xl">🏆</div>
-                      <div>
-                        <h3 className="text-lg font-black text-white tracking-wider">{t('lobbyLeaderboard')}</h3>
-                        <p className="text-xs text-gray-400">{t('liveScores')}</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 max-h-none md:max-h-[45vh] lg:max-h-[65vh] overflow-y-auto pr-1 scrollbar-thin">
-                      {leaderboard.length === 0 ? (
-                        <div className="text-center py-12">
-                          <p className="text-gray-500 text-sm font-semibold">{t('noPoints')}</p>
-                        </div>
-                      ) : (
-                        leaderboard.slice(0, 20).map((player, i) => {
-                          const isTop3 = i < 3
-                          const medals = ['🥇', '🥈', '🥉']
-                          const colors = [
-                            'from-amber-500/10 to-transparent border-amber-500/25 text-amber-300',
-                            'from-slate-400/10 to-transparent border-slate-400/25 text-slate-300',
-                            'from-amber-700/10 to-transparent border-amber-700/25 text-amber-600',
-                          ]
-                          const cardBg = isTop3 
-                            ? `bg-gradient-to-r ${colors[i]}` 
-                            : 'bg-black/30 border-white/5 text-gray-300'
-
-                          return (
-                            <div
-                              key={`leaderboard-sidebar-${player.participantId || player.id || i}-${i}`}
-                              className={`flex items-center justify-between p-4 border rounded-2xl shadow-md ${cardBg}`}
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                {/* Position Rank */}
-                                <div className="text-center w-8 h-8 rounded-lg bg-black/40 flex items-center justify-center font-black text-sm">
-                                  {isTop3 ? medals[i] : `#${i + 1}`}
-                                </div>
-                                
-                                {/* Name & correct ratio */}
-                                <div className="min-w-0">
-                                  <p className="font-bold text-white text-sm truncate">{player.username}</p>
-                                  <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-0.5">{player.correctAnswers} correct</p>
-                                </div>
-                              </div>
-
-                              {/* Points score */}
-                              <div className="text-right shrink-0 pl-2">
-                                <p className="font-black text-[#e85d4c] text-lg leading-none">{player.totalPoints}</p>
-                                <p className="text-[9px] uppercase tracking-wider text-gray-500 mt-1">{t('pts')}</p>
-                              </div>
-                            </div>
-                          )
-                        })
-                      )}
-                    </div>
-                  </div>
                 </>
               )
             })()}
@@ -1304,6 +1280,6 @@ export default function HostGameScreen() {
       </div>
       </div>
       <TourButton tour={hostRoomTour(tTour)} label={t('guide')} position="bottom-right" />
-    </GameBackground>
+    </ThemedGameBackground>
   )
 }

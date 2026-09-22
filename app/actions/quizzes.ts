@@ -3,6 +3,7 @@
 import { apiRequest } from '@/services/api/client'
 import { revalidatePath } from 'next/cache'
 import { getTranslations } from 'next-intl/server'
+import type { BrandingPatch } from '@/lib/theme'
 
 // Quiz CRUD
 export async function createQuiz(title: string, description?: string) {
@@ -36,6 +37,8 @@ export async function getMyQuizzes() {
       quiz.question_count ??
         (Array.isArray(quiz.questions) ? quiz.questions.length : 0)
     ),
+    isPublic: !!quiz.is_public,
+    allowEdit: !!quiz.allow_edit,
   }))
 }
 
@@ -77,10 +80,75 @@ export async function getQuizById(quizId: string) {
     description: quiz.description,
     themeConfig: quiz.theme_config,
     questions: formattedQuestions,
+    // Sharing state and what this viewer may do with it. The server decides;
+    // the UI only reflects the answer, so a hidden button is never the only
+    // thing standing between a reader and someone else's quiz.
+    isPublic: !!quiz.is_public,
+    allowEdit: !!quiz.allow_edit,
+    // Defaulting to true when the field is absent keeps an older API from
+    // locking a host out of their own quiz during a rolling deploy. The server
+    // is the authority either way — it rejects a write the viewer may not make.
+    isOwner: quiz.is_owner ?? true,
+    canEdit: quiz.can_edit ?? true,
+    canHost: quiz.can_host ?? true,
+    // The row version, handed back on save so two editors cannot overwrite
+    // each other silently.
+    updatedAt: quiz.updated_at as string | undefined,
   }
 }
 
-/** Deep-copy a quiz (metadata + questions) into a new playable quiz. */
+/**
+ * Publish or unpublish a quiz, and choose whether others may edit the original.
+ *
+ * Owner only — the API checks independently. Unpublishing clears edit rights
+ * server-side, so read the answer back rather than assuming what was sent.
+ */
+export async function updateQuizSharing(
+  quizId: string,
+  isPublic: boolean,
+  allowEdit: boolean
+) {
+  const data = await apiRequest(`/quizzes/${quizId}/sharing`, 'PATCH', {
+    is_public: isPublic,
+    allow_edit: allowEdit,
+  })
+  revalidatePath(`/quizzes/${quizId}`)
+  revalidatePath('/dashboard')
+  return { isPublic: !!data.is_public, allowEdit: !!data.allow_edit }
+}
+
+/** Quizzes other hosts have published. Paginated: this list is platform-wide. */
+export async function getSharedQuizzes(search = '', page = 1, pageSize = 20) {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+  if (search.trim()) params.set('q', search.trim())
+
+  const data = await apiRequest(`/quizzes/shared?${params.toString()}`)
+  const list = Array.isArray(data?.quizzes) ? data.quizzes : []
+  return {
+    quizzes: list.map((quiz: any) => ({
+      id: String(quiz.id),
+      title: quiz.title,
+      description: quiz.description,
+      questionCount: Number(quiz.question_count ?? 0),
+      allowEdit: !!quiz.allow_edit,
+      isOwner: !!quiz.is_owner,
+      authorName: quiz.author_name || '',
+      createdAt: new Date(quiz.created_at),
+    })),
+    total: Number(data?.total ?? 0),
+    page: Number(data?.page ?? page),
+    pageSize: Number(data?.page_size ?? pageSize),
+  }
+}
+
+/**
+ * Deep-copy a quiz (metadata + questions) into a new quiz owned by the caller.
+ *
+ * Works on any quiz the caller may read, which since sharing includes other
+ * people's public ones — that is how somebody "edits" a shared quiz: they take
+ * their own copy. The copy is independent, so unsharing the original later does
+ * not reach it.
+ */
 export async function duplicateQuiz(quizId: string) {
   const source = await getQuizById(quizId)
   const created = await createQuiz(
@@ -107,6 +175,8 @@ export async function duplicateQuiz(quizId: string) {
     order: index + 1,
   }))
 
+  // No expected_updated_at here: the target was created a line ago and nobody
+  // else can have it open, so there is no version to guard.
   await apiRequest(`/quizzes/${created.id}`, 'PUT', {
     title: created.title,
     description: source.description || '',
@@ -191,6 +261,7 @@ export async function importQuestionsFromQuiz(
     description: target.description || '',
     theme_config: target.themeConfig || '',
     questions: [...existing, ...imported],
+     expected_updated_at: target.updatedAt,
   })
 
   revalidatePath(`/quizzes/${targetQuizId}`)
@@ -220,6 +291,7 @@ export async function updateQuiz(quizId: string, title: string, description?: st
     description,
     theme_config: quiz.themeConfig,
     questions: reqQuestions,
+     expected_updated_at: quiz.updatedAt,
   })
 
   revalidatePath('/quizzes')
@@ -249,6 +321,7 @@ export async function updateQuizThemeConfig(quizId: string, themeConfig: string)
     description: quiz.description,
     theme_config: themeConfig,
     questions: reqQuestions,
+     expected_updated_at: quiz.updatedAt,
   })
 
   revalidatePath(`/quizzes/${quizId}`)
@@ -265,6 +338,38 @@ export async function updateQuizExplanationDuration(quizId: string, seconds: num
   let config: Record<string, any> = {}
   try { config = JSON.parse(quiz.themeConfig || '{}') || {} } catch {}
   config.explanation_duration = Math.min(Math.max(Math.round(seconds) || 10, 3), 60)
+  return updateQuizThemeConfig(quizId, JSON.stringify(config))
+}
+
+/**
+ * Quiz-level branding: the key visuals, the logo and the scrim over them.
+ *
+ * Merges into theme_config for the same reason updateQuizExplanationDuration
+ * does — a write that replaced the object would drop game_mode, and the room
+ * created next would start in the wrong mode.
+ *
+ * Only the keys present in `patch` are touched. Passing an empty string for
+ * one clears it, which is how the UI removes an image; leaving it out keeps
+ * whatever is stored.
+ */
+export async function updateQuizBranding(quizId: string, patch: BrandingPatch) {
+  const quiz = await getQuizById(quizId)
+  let config: Record<string, any> = {}
+  try { config = JSON.parse(quiz.themeConfig || '{}') || {} } catch {}
+
+  for (const [key, value] of Object.entries(patch)) {
+    // An empty string is a deliberate clear, and the key is dropped rather
+    // than stored blank so the row stays as small as it was before the host
+    // ever opened the branding panel.
+    if (value === '' || value === undefined || value === null) {
+      delete config[key]
+    } else {
+      config[key] = value
+    }
+  }
+
+  // The backend clamps and re-checks all of this; sending a coherent object
+  // just keeps the optimistic UI and the stored value in agreement.
   return updateQuizThemeConfig(quizId, JSON.stringify(config))
 }
 
@@ -311,6 +416,7 @@ export async function addQuestion(quizId: string, questionText: string, timeLimi
     description: quiz.description,
     theme_config: quiz.themeConfig,
     questions: reqQuestions,
+     expected_updated_at: quiz.updatedAt,
   })
 
   revalidatePath(`/quizzes/${quizId}`)
@@ -420,6 +526,7 @@ export async function updateQuestion(
     description: quizDetails.description,
     theme_config: quizDetails.theme_config,
     questions: reqQuestions,
+    expected_updated_at: quizDetails.updated_at,
   })
 
   revalidatePath(`/quizzes/${quizId}`)
@@ -465,6 +572,7 @@ export async function updateQuestionExplanation(
     description: quizDetails.description,
     theme_config: quizDetails.theme_config,
     questions: reqQuestions,
+    expected_updated_at: quizDetails.updated_at,
   })
 
   revalidatePath(`/quizzes/${quizId}`)
@@ -510,6 +618,7 @@ export async function deleteQuestion(questionId: string) {
     description: quizDetails.description,
     theme_config: quizDetails.theme_config,
     questions: reqQuestions,
+    expected_updated_at: quizDetails.updated_at,
   })
 
   revalidatePath(`/quizzes/${quizId}`)
@@ -567,6 +676,7 @@ export async function addAnswerOption(
     description: quizDetails.description,
     theme_config: quizDetails.theme_config,
     questions: reqQuestions,
+    expected_updated_at: quizDetails.updated_at,
   })
 
   revalidatePath(`/quizzes/${quizId}`)
@@ -646,6 +756,7 @@ export async function updateAnswerOption(
     description: quizDetails.description,
     theme_config: quizDetails.theme_config,
     questions: reqQuestions,
+    expected_updated_at: quizDetails.updated_at,
   })
 
   revalidatePath(`/quizzes/${quizId}`)
@@ -699,6 +810,7 @@ export async function deleteAnswerOption(quizId: string, questionId: string, opt
     description: quizDetails.description,
     theme_config: quizDetails.theme_config,
     questions: reqQuestions,
+    expected_updated_at: quizDetails.updated_at,
   })
 
   revalidatePath(`/quizzes/${quizId}`)
@@ -706,8 +818,23 @@ export async function deleteAnswerOption(quizId: string, questionId: string, opt
 }
 
 // Game Sessions (Rooms)
-export async function createGameSession(quizId: string, isPrivate: boolean = true) {
-  const room = await apiRequest(`/rooms?quiz_id=${quizId}&is_private=${isPrivate}`, 'POST')
+/**
+ * Open a room for one game.
+ *
+ * `mode` is passed to the API and applied to the room's own copy of the theme.
+ * It used to be saved onto the quiz first, which made starting a game a write:
+ * picking Solo rewrote the author's quiz for everyone, and on a shared quiz it
+ * failed outright, because a guest may not write to someone else's quiz.
+ */
+export async function createGameSession(
+  quizId: string,
+  isPrivate: boolean = true,
+  mode: 'classic' | 'solo' = 'classic'
+) {
+  const room = await apiRequest(
+    `/rooms?quiz_id=${quizId}&is_private=${isPrivate}&game_mode=${mode}`,
+    'POST'
+  )
   revalidatePath('/host')
   return {
     id: String(room.id),

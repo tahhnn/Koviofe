@@ -125,6 +125,81 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+
+  /* One scrollbar for the whole app.
+   *
+   * There are a dozen scrolling panes here — the lobby roster, the slide list,
+   * the leaderboard, the admin tables, the GIF picker — and until now every one
+   * of them drew the operating system's default bar: a light grey trough that
+   * lands on a #12141a surface like a strip of tape, and that looks different
+   * on every machine a host might plug into a projector.
+   *
+   * Declared on :root rather than on a utility class so a pane added later
+   * inherits it without anyone remembering to opt in.
+   */
+  :root {
+    --scrollbar-size: 10px;
+    --scrollbar-thumb: rgb(242 240 235 / 0.16);
+    --scrollbar-thumb-hover: rgb(242 240 235 / 0.32);
+  }
+
+  *::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+  }
+
+  /* No trough. A visible track draws a line down the edge of every panel, and
+   * on top of a host's key visual that line is the first thing the eye finds. */
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 999px;
+    /* Transparent border plus padding-box clipping insets the thumb without
+     * shrinking the hit area: the bar stays easy to grab while looking like a
+     * thin pill floating clear of the content. */
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  /* Where the two bars meet, the default is a small grey square. */
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* The page itself keeps the OS bar. Overriding the document scrollbar means
+   * owning its behaviour on every platform, and nothing here scrolls the
+   * document far enough to be worth that. */
+  html::-webkit-scrollbar {
+    width: auto;
+  }
+
+  /* Firefox, and only Firefox.
+   *
+   * It has no pseudo-elements for a scrollbar, so the standard properties are
+   * the only way to reach it — but declaring them unconditionally is what
+   * silently undid the design above: current Chromium supports them too, and
+   * once `scrollbar-width` is set it ignores ::-webkit-scrollbar entirely. The
+   * result was a plain 13px system bar everywhere, with the rounded inset
+   * thumb showing up in nothing but old Safari.
+   *
+   * The support query is the fence: Chromium and Safari understand the
+   * ::-webkit-scrollbar selector, so they skip this block and keep the styled
+   * bar; Firefox does not, so it lands here and gets the closest approximation
+   * the standard properties can express.
+   */
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) transparent;
+    }
+  }
 }
 
 @keyframes soft-drift {

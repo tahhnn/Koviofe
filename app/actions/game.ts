@@ -244,6 +244,9 @@ export async function getRoomResults(sessionId: string, playerToken?: string) {
     // websocket payload is gone by the time this page renders, so the API field
     // is the source of truth on a reload.
     endedReason: String(data.ended_reason || ''),
+    // The host's branding, so the results screen matches the room everyone
+    // just played in rather than dropping back to the stock gradient.
+    themeConfig: String(data.theme_config || ''),
     players: players.map((p: any) => ({
       id: String(p.id),
       username: p.nickname,

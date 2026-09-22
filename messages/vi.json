@@ -271,7 +271,67 @@
     "titleRequired": "Tên quiz không được để trống.",
     "updateFailed": "Không thể cập nhật thông tin quiz.",
     "confirmDeleteBody": "Xác nhận xoá quiz",
-    "confirmDeleteWarning": "Hành động này không thể khôi phục. Bạn có chắc chắn muốn xóa Quiz này không?"
+    "confirmDeleteWarning": "Hành động này không thể khôi phục. Bạn có chắc chắn muốn xóa Quiz này không?",
+    "sharedQuizzes": "Được chia sẻ",
+    "sharedSearchPlaceholder": "Tìm quiz được chia sẻ…",
+    "noSharedQuizzes": "Chưa có quiz nào được chia sẻ",
+    "noSharedHint": "Khi một người dùng bật chia sẻ cho quiz của họ, quiz sẽ xuất hiện ở đây.",
+    "sharedNoMatch": "Không có quiz chia sẻ nào khớp với từ khoá này.",
+    "byAuthor": "bởi {name}",
+    "yourQuiz": "Quiz của bạn",
+    "open": "Mở",
+    "share": "Chia sẻ",
+    "shared": "Đang chia sẻ",
+    "prevPage": "Trang trước",
+    "nextPage": "Trang sau",
+    "pageOf": "Trang {page} / {pages}",
+    "sharedEditable": "Cho phép sửa",
+    "sharedViewOnly": "Chỉ xem"
+  },
+  "luckyDraw": {
+    "tab": "Tải app LuckyDraw",
+    "pageTitle": "Tải app LuckyDraw",
+    "pageSubtitle": "Tải ứng dụng quay số may mắn về máy để bốc thăm trúng thưởng ngay tại sự kiện.",
+    "backToDashboard": "Về bảng điều khiển",
+    "appName": "LuckyDraw",
+    "appTagline": "Ứng dụng quay số may mắn đi kèm quizzZone — cài lên máy tính để bốc thăm trúng thưởng ngay tại sự kiện.",
+    "download": "Tải về",
+    "moreInfo": "Xem thêm thông tin",
+    "yourDevice": "Máy của bạn",
+    "scanTitle": "Quét để tải",
+    "scanHint": "Mở camera trên điện thoại và quét mã để tải bản {platform}.",
+    "updatedOn": "Cập nhật {date}",
+    "emptyTitle": "Chưa có bản cài đặt nào",
+    "emptyHint": "Ứng dụng chưa được tải lên máy chủ. Khi quản trị viên đưa file cài đặt lên, nút tải sẽ xuất hiện ở đây.",
+    "platform": {
+      "windows": "Windows",
+      "macos": "macOS",
+      "android": "Android",
+      "ios": "iOS",
+      "other": "Nền tảng khác"
+    },
+    "kind": {
+      "installer": "Bản cài đặt",
+      "diskImage": "Ảnh đĩa (.dmg)",
+      "portable": "Bản chạy ngay, không cần cài",
+      "portableArchive": "Bản chạy ngay (gói .zip)",
+      "archive": "Gói nén (.zip)"
+    },
+    "arch": {
+      "x64": "64-bit (x64)",
+      "arm64": "ARM64",
+      "x86": "32-bit (x86)"
+    },
+    "mac": {
+      "x64": "Máy Intel",
+      "arm64": "Apple Silicon (M1/M2/M3…)",
+      "x86": "32-bit"
+    },
+    "installHint": {
+      "windows": "Windows có thể hiện cảnh báo SmartScreen vì app chưa mua chứng chỉ ký số: bấm “More info” rồi “Run anyway”. Bản cài đặt tạo lối tắt ngoài desktop, bản chạy ngay thì mở file là dùng được.",
+      "macos": "Chọn đúng loại chip: máy M1/M2/M3 tải bản Apple Silicon, máy cũ hơn tải bản Intel. Nếu macOS báo không mở được vì chưa xác minh nhà phát triển, vào Cài đặt hệ thống › Quyền riêng tư & Bảo mật rồi bấm “Vẫn mở”.",
+      "android": "Sau khi tải xong hãy mở file và cho phép cài đặt từ nguồn này khi máy hỏi."
+    }
   },
   "host": {
     "loading": "Đang tải phòng…",
@@ -301,8 +361,6 @@
     "endQuickly": "Kết thúc nhanh",
     "confirmEndTitle": "Kết thúc trận đấu?",
     "confirmEndBody": "Tất cả người chơi sẽ được chuyển sang bảng kết quả ngay lập tức và phòng sẽ đóng. Hành động này không thể hoàn tác.",
-    "lobbyLeaderboard": "Bảng xếp hạng sảnh chờ",
-    "liveScores": "Điểm cập nhật trực tiếp",
     "noPoints": "Chưa có ai ghi điểm.",
     "privateRoom": "Phòng riêng tư",
     "prevQuestion": "Câu trước",
@@ -377,7 +435,8 @@
     "gifLibrary": "Thư viện GIF",
     "upload": "Tải lên",
     "link": "Link",
-    "quotaExceeded": "Đã dùng hết dung lượng ảnh ({used}/{quota}). Xoá bớt ảnh cũ hoặc liên hệ quản trị viên."
+    "quotaExceeded": "Đã dùng hết dung lượng ảnh ({used}/{quota}). Xoá bớt ảnh cũ hoặc liên hệ quản trị viên.",
+    "tooManyPixels": "Ảnh quá lớn ({width}×{height}px). Tối đa {max}px mỗi chiều."
   },
   "editor": {
     "loading": "Đang tải quiz…",
@@ -494,7 +553,39 @@
     "importSameQuiz": "Không thể lấy câu từ chính quiz này",
     "importNothingSelected": "Không có câu hỏi nào được chọn",
     "explanationPreviewExpand": "Xem lớn",
-    "explanationPreviewClose": "Đóng xem trước"
+    "explanationPreviewClose": "Đóng xem trước",
+    "kvSectionTitle": "Ảnh nền chương trình (KV)",
+    "kvProOnly": "Gói Pro",
+    "kvHostLabel": "Màn hình chiếu",
+    "kvHostHint": "16:9 · 1920×1080",
+    "kvPlayerLabel": "Màn hình người chơi",
+    "kvPlayerHint": "9:16 · 1080×1920",
+    "kvRemove": "Xoá ảnh nền",
+    "kvUploadFailed": "Tải ảnh lên thất bại",
+    "kvOverlayLabel": "Độ phủ tối",
+    "kvOverlayHint": "Tối thiểu {min}% để chữ còn đọc được trên máy chiếu.",
+    "kvLogoLabel": "Logo chương trình",
+    "kvLogoHint": "PNG nền trong · hiện trên nền tối",
+    "kvOverlayColorLabel": "Màu phủ",
+    "kvOverlayColorReset": "Mặc định",
+    "kvOverlayPreviewText": "Chữ mẫu trên nền",
+    "kvOverlayLightWarning": "Màu phủ đang khá sáng — xem khung thử ở trên, chữ trắng có thể bị chìm trên máy chiếu.",
+    "shareTitle": "Chia sẻ quiz",
+    "shareHint": "Bật chia sẻ để mọi người dùng khác thấy quiz này, mở phòng chơi từ nó, hoặc nhân bản thành quiz của riêng họ.",
+    "shareAnswersWarning": "Người được chia sẻ sẽ xem được đáp án và phần giải thích của mọi câu hỏi.",
+    "sharePublic": "Cho người khác thấy, mở phòng và nhân bản",
+    "shareSaved": "Đã cập nhật chế độ chia sẻ",
+    "shareFailed": "Không cập nhật được chế độ chia sẻ",
+    "readOnlyBanner": "Quiz này do người khác chia sẻ, bạn chỉ xem được.",
+    "readOnlyTitle": "Không sửa được",
+    "readOnlyDuplicateHint": "Nhân bản để có bản của riêng bạn rồi sửa thoải mái.",
+    "duplicateToMine": "Nhân bản về quiz của tôi",
+    "duplicating": "Đang nhân bản…",
+    "duplicated": "Đã nhân bản",
+    "shareCopyWarning": "Người khác có thể nhân bản quiz này thành bản của họ. Bản đã nhân bản không thu hồi được, kể cả khi bạn tắt chia sẻ.",
+    "shareAllowEdit": "Cho người khác sửa luôn bản gốc",
+    "shareAllowEditWarning": "Bất kỳ ai cũng sửa được câu hỏi của bản gốc, và thay đổi áp dụng cho tất cả. Chỉ bạn mới đổi được chế độ chia sẻ và xoá quiz.",
+    "sharedEditableBanner": "Quiz này do người khác chia sẻ và cho phép sửa. Thay đổi của bạn áp dụng cho tất cả mọi người."
   },
   "adminUsers": {
     "title": "Quản lý người dùng",
@@ -764,7 +855,13 @@
     "otherRoom": "Chọn phòng khác",
     "rejoin": "Join lại",
     "continue": "Tiếp tục",
-    "otherOption": "Tùy chọn khác"
+    "otherOption": "Tùy chọn khác",
+    "quizConflictTitle": "Quiz vừa bị người khác sửa",
+    "quizConflictBody": "Có người lưu thay đổi trong lúc bạn đang sửa. Tải lại trang để lấy bản mới nhất rồi sửa lại.",
+    "quizInPlayTitle": "Quiz đang được chơi",
+    "quizInPlayBody": "Có phòng đang chạy quiz này. Đợi phòng kết thúc rồi sửa, nếu không ván đang chơi sẽ bị hỏng.",
+    "duplicateInsteadTitle": "Quiz này chỉ cho xem",
+    "duplicateInsteadBody": "Chủ quiz chia sẻ quiz này ở chế độ chỉ xem. Hãy nhân bản về quiz của bạn rồi sửa trên bản đó."
   },
   "tours": {
     "finish": "Hoàn tất",

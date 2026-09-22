@@ -5,6 +5,7 @@ import { join, extname } from 'path'
 import { randomBytes } from 'crypto'
 import { getSession } from '@/lib/session'
 import { getTranslations } from 'next-intl/server'
+import { readImageDimensions } from '@/lib/image-dimensions'
 
 const ALLOWED_MIME: Record<string, string> = {
   'image/jpeg': '.jpg',
@@ -23,6 +24,18 @@ const MAX_BYTES = 2 * 1024 * 1024
 // quiz costs ~10 MB — the default leaves room for roughly a hundred of them
 // while bounding what a single account can do to the disk.
 const DEFAULT_QUOTA_BYTES = 1024 * 1024 * 1024 // 1GB
+
+// Pixel ceiling for a stored image.
+//
+// The byte limit above is not enough on its own: a flat-coloured PNG at
+// 12000x12000 compresses to well under 2MB, and every player's phone would
+// then decode it into roughly 500MB of bitmap. 4096 is double the largest
+// surface anything here renders on (a 1920x1080 projector), so it leaves room
+// for a retina export without leaving room for a decompression bomb.
+//
+// The browser downscales before uploading, so a host who uses the app never
+// meets this limit; it is the backstop for a request that skipped that step.
+const MAX_IMAGE_DIMENSION = 4096
 
 function quotaBytes(): number {
   const raw = Number(process.env.UPLOAD_QUOTA_BYTES_PER_USER)
@@ -94,6 +107,22 @@ export async function uploadImageAction(formData: FormData) {
     // Sniff magic bytes for common image formats
     if (!looksLikeImage(buffer, mime)) {
       return { success: false, error: 'File content does not match an allowed image type' }
+    }
+
+    // Unreadable dimensions are not a rejection — see lib/image-dimensions.ts.
+    const dimensions = readImageDimensions(buffer)
+    if (
+      dimensions &&
+      (dimensions.width > MAX_IMAGE_DIMENSION || dimensions.height > MAX_IMAGE_DIMENSION)
+    ) {
+      return {
+        success: false,
+        error: (await getTranslations('media'))('tooManyPixels', {
+          width: dimensions.width,
+          height: dimensions.height,
+          max: MAX_IMAGE_DIMENSION,
+        }),
+      }
     }
 
     // Keep uploads outside public/ — Next.js production only indexes public/

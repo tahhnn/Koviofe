@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { authClient } from '@/lib/auth-client'
-import { getMyQuizzes, createQuiz, deleteQuiz, getDashboardStats, createQuizFromMockTemplate, duplicateQuiz, updateQuiz } from '@/app/actions/quizzes'
+import { getMyQuizzes, createQuiz, deleteQuiz, getDashboardStats, createQuizFromMockTemplate, duplicateQuiz, updateQuiz, getSharedQuizzes } from '@/app/actions/quizzes'
 import { GameBackground } from '@/components/game-background'
 import { useToast } from '@/components/ui/toast'
 import { Input } from '@/components/ui/input'
@@ -32,6 +32,10 @@ import {
   Calendar,
   Copy,
   X,
+  Globe,
+  Eye,
+  Users2,
+  Gift,
 } from 'lucide-react'
 import { BrandMark } from '@/components/brand-mark'
 import { LanguageSwitcher } from '@/components/language-switcher'
@@ -48,6 +52,7 @@ export default function DashboardPage() {
   const tCommon = useTranslations('common')
   const tAdmin = useTranslations('admin')
   const tTour = useTranslations('tours')
+  const tLucky = useTranslations('luckyDraw')
   const router = useRouter()
   const toast = useToast()
   const [user, setUser] = useState<any>(null)
@@ -55,7 +60,17 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeTab, setActiveTab] = useState<'list' | 'quick-create'>('list')
+  const [activeTab, setActiveTab] = useState<'list' | 'shared' | 'quick-create'>('list')
+
+  // Shared quizzes are paginated and searched on the server, unlike the host's
+  // own list: this one is the whole platform's, so it cannot be filtered in
+  // the browser off a single fetch.
+  const [sharedQuizzes, setSharedQuizzes] = useState<any[]>([])
+  const [sharedTotal, setSharedTotal] = useState(0)
+  const [sharedPage, setSharedPage] = useState(1)
+  const [sharedLoading, setSharedLoading] = useState(false)
+  const [sharedSearch, setSharedSearch] = useState('')
+  const SHARED_PAGE_SIZE = 12
   const [quickCreating, setQuickCreating] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [license, setLicense] = useState<LicenseSnapshot | null>(null)
@@ -191,6 +206,35 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- toast context identity is unstable; effect must not re-run on toast changes
   }, [router])
 
+  // Refetches on tab, page and search. The 350ms wait is what keeps a typed
+  // word from firing one platform-wide query per keystroke.
+  useEffect(() => {
+    if (activeTab !== 'shared') return
+    let cancelled = false
+    setSharedLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const data = await getSharedQuizzes(sharedSearch, sharedPage, SHARED_PAGE_SIZE)
+        if (cancelled) return
+        setSharedQuizzes(data.quizzes)
+        setSharedTotal(data.total)
+      } catch (error) {
+        console.error('Error loading shared quizzes:', error)
+        if (!cancelled) {
+          setSharedQuizzes([])
+          setSharedTotal(0)
+        }
+      } finally {
+        if (!cancelled) setSharedLoading(false)
+      }
+    }, 350)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [activeTab, sharedPage, sharedSearch])
+
   const handleCreateQuiz = async () => {
     setCreating(true)
     try {
@@ -243,6 +287,15 @@ export default function DashboardPage() {
                 </Button>
               </Link>
             )}
+            <Link href="/luckydraw">
+              <Button
+                variant="ghost"
+                className="text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-white/5 h-11 sm:h-9 rounded-xl font-medium text-xs border-none flex items-center gap-1.5"
+              >
+                <Gift className="w-4 h-4" />
+                {tLucky('tab')}
+              </Button>
+            </Link>
             <Link href="/profile/settings">
               <Button
                 variant="ghost"
@@ -355,6 +408,17 @@ export default function DashboardPage() {
                 {t('myQuizzes')}
               </button>
               <button
+                onClick={() => setActiveTab('shared')}
+                className={`flex items-center justify-center gap-2 min-h-11 sm:min-h-0 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-1 md:flex-none ${
+                  activeTab === 'shared'
+                    ? 'bg-[#e85d4c] text-[#fff8f5] shadow-md'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                {t('sharedQuizzes')}
+              </button>
+              <button
                 onClick={() => setActiveTab('quick-create')}
                 className={`flex items-center justify-center gap-2 min-h-11 sm:min-h-0 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-1 md:flex-none ${
                   activeTab === 'quick-create' 
@@ -366,6 +430,24 @@ export default function DashboardPage() {
                 {t('starterPacks')}
               </button>
             </div>
+
+            {activeTab === 'shared' && (
+              <div className="relative w-full md:w-80">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Input
+                  type="text"
+                  placeholder={t('sharedSearchPlaceholder')}
+                  value={sharedSearch}
+                  onChange={(e) => {
+                    setSharedSearch(e.target.value)
+                    // A new term invalidates the page number: page 3 of the old
+                    // result set is very likely past the end of the new one.
+                    setSharedPage(1)
+                  }}
+                  className="w-full bg-black/40 border-white/5 focus:border-indigo-500/50 text-white placeholder-gray-500 pl-10 h-10 rounded-xl text-base sm:text-xs transition-all duration-300"
+                />
+              </div>
+            )}
 
             {/* Search Input (Only for List tab) */}
             {activeTab === 'list' && (
@@ -431,9 +513,20 @@ export default function DashboardPage() {
                           <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
                             <Gamepad2 className="w-5 h-5 text-purple-400" />
                           </div>
-                          <span className="text-[10px] uppercase font-extrabold tracking-widest text-indigo-400">
-                            {quiz.questionCount ?? quiz.questions?.length ?? 0} Questions
-                          </span>
+                          <div className="flex items-center gap-2">
+                            {quiz.isPublic && (
+                              <span
+                                title={quiz.allowEdit ? t('sharedEditable') : t('sharedViewOnly')}
+                                className="text-[10px] uppercase font-extrabold tracking-widest px-2 py-1 rounded-lg border text-sky-300 bg-sky-500/10 border-sky-500/20 flex items-center gap-1"
+                              >
+                                <Globe className="w-3 h-3" />
+                                {t('shared')}
+                              </span>
+                            )}
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-indigo-400">
+                              {quiz.questionCount ?? quiz.questions?.length ?? 0} Questions
+                            </span>
+                          </div>
                         </div>
                         <div 
                           onClick={() => handleOpenEditQuiz(quiz)}
@@ -490,6 +583,140 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )
+            })()
+          ) : activeTab === 'shared' ? (
+            // QUIZZES OTHER HOSTS HAVE PUBLISHED
+            (() => {
+              if (sharedLoading && sharedQuizzes.length === 0) {
+                return (
+                  <div className="bg-white/5 border border-white/5 rounded-3xl p-10 text-center backdrop-blur-sm">
+                    <Hourglass className="w-10 h-10 text-indigo-400 animate-spin mx-auto" />
+                  </div>
+                )
+              }
+
+              if (sharedQuizzes.length === 0) {
+                return (
+                  <div className="bg-white/5 border border-white/5 rounded-3xl p-6 sm:p-10 lg:p-16 text-center backdrop-blur-sm shadow-xl flex flex-col items-center justify-center space-y-6">
+                    <Globe className="w-16 h-16 text-indigo-500/40 mx-auto" />
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-bold text-white">{t('noSharedQuizzes')}</h3>
+                      <p className="text-gray-400 text-sm max-w-sm leading-relaxed mx-auto">
+                        {sharedSearch ? t('sharedNoMatch') : t('noSharedHint')}
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+
+              const pages = Math.max(1, Math.ceil(sharedTotal / SHARED_PAGE_SIZE))
+
+              return (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {sharedQuizzes.map((quiz) => (
+                      <div
+                        key={quiz.id}
+                        className="bg-white/5 border border-white/5 hover:border-white/15 rounded-3xl p-6 backdrop-blur-sm hover:shadow-2xl shadow-lg flex flex-col justify-between transition-all duration-300 group hover:translate-y-[-2px] min-h-[230px] h-auto"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
+                              <Globe className="w-5 h-5 text-sky-400" />
+                            </div>
+                            <span className="text-[10px] uppercase font-extrabold tracking-widest text-indigo-400">
+                              {quiz.questionCount} Questions
+                            </span>
+                          </div>
+                          <div>
+                            <h3 className="text-xl font-bold text-white line-clamp-1">{quiz.title}</h3>
+                            <p className="text-gray-400 text-sm mt-1 line-clamp-2 leading-relaxed">
+                              {quiz.description || t('noDescription')}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Says up front whether opening this leads to an
+                                editor or a reader, so nobody discovers it on
+                                the first keystroke. */}
+                            <span
+                              className={`text-[10px] uppercase font-extrabold tracking-widest px-2 py-1 rounded-lg border ${
+                                quiz.allowEdit
+                                  ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
+                                  : 'text-gray-400 bg-white/5 border-white/10'
+                              }`}
+                            >
+                              {quiz.allowEdit ? t('sharedEditable') : t('sharedViewOnly')}
+                            </span>
+                            {quiz.isOwner && (
+                              <span className="text-[10px] uppercase font-extrabold tracking-widest px-2 py-1 rounded-lg border text-purple-300 bg-purple-500/10 border-purple-500/20">
+                                {t('yourQuiz')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-white/5 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between mt-auto">
+                          <span className="text-[11px] text-gray-500 flex items-center gap-1 truncate">
+                            <Users2 className="w-3 h-3 shrink-0" />
+                            {t('byAuthor', { name: quiz.authorName })}
+                          </span>
+                          <div className="flex gap-2 justify-end">
+                            <Link href={`/quizzes/${quiz.id}`}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-white/10 hover:bg-white/5 text-xs font-bold text-gray-300 hover:text-white rounded-xl h-10 sm:h-9 flex items-center gap-1"
+                              >
+                                {quiz.allowEdit ? <Edit3 className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                {t('open')}
+                              </Button>
+                            </Link>
+                            {/* The primary action, because taking a copy is
+                                how somebody makes a shared quiz their own —
+                                the original stays read-only for everyone but
+                                its author. */}
+                            <Button
+                              size="sm"
+                              disabled={actionLoading === `dup-${quiz.id}`}
+                              onClick={() => handleDuplicateQuiz(quiz.id)}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md border-none h-10 sm:h-9 flex items-center gap-1"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                              {actionLoading === `dup-${quiz.id}` ? '…' : t('duplicate')}
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {pages > 1 && (
+                    <div className="flex items-center justify-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={sharedPage <= 1 || sharedLoading}
+                        onClick={() => setSharedPage((p) => Math.max(1, p - 1))}
+                        className="border-white/10 hover:bg-white/5 text-xs font-bold text-gray-300 rounded-xl h-10"
+                      >
+                        {t('prevPage')}
+                      </Button>
+                      <span className="text-xs text-gray-400 font-medium">
+                        {t('pageOf', { page: sharedPage, pages })}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={sharedPage >= pages || sharedLoading}
+                        onClick={() => setSharedPage((p) => p + 1)}
+                        className="border-white/10 hover:bg-white/5 text-xs font-bold text-gray-300 rounded-xl h-10"
+                      >
+                        {t('nextPage')}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )
             })()

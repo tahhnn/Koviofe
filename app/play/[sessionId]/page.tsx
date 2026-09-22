@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { fetchPlayerQuestion, submitAnswer, getQuizQuestionsCount, getRoomStandings } from '@/app/actions/game'
 import { getGameSession } from '@/app/actions/quizzes'
-import { GameBackground } from '@/components/game-background'
+import { ThemedGameBackground } from '@/components/game-background'
 import { Hourglass, ArrowRight, XCircle, Check, MapPin } from 'lucide-react'
 import {
   ExplanationSlide,
@@ -1027,20 +1027,20 @@ export default function PlayerGameScreen() {
 
   if (loading) {
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="player">
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center">
             <div className="mx-auto h-10 w-10 rounded-full border-2 border-[#2c313d] border-t-[#e85d4c] animate-spin" />
             <p className="text-sm text-[#9a9eab] mt-4">{t('loading')}</p>
           </div>
         </div>
-      </GameBackground>
+      </ThemedGameBackground>
     )
   }
 
   if (loadError) {
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="player">
         <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8 text-center">
             <XCircle className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
@@ -1065,13 +1065,13 @@ export default function PlayerGameScreen() {
             </Button>
           </div>
         </div>
-      </GameBackground>
+      </ThemedGameBackground>
     )
   }
 
   if (startCountdown !== null) {
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="player">
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <p className="text-6xl sm:text-7xl md:text-8xl font-black text-[#f2f0eb] tabular-nums">
@@ -1079,13 +1079,13 @@ export default function PlayerGameScreen() {
             </p>
           </div>
         </div>
-      </GameBackground>
+      </ThemedGameBackground>
     )
   }
 
   if (!currentQuestion) {
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="player">
         <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8 text-center">
             <Hourglass className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
@@ -1095,7 +1095,7 @@ export default function PlayerGameScreen() {
             </p>
           </div>
         </div>
-      </GameBackground>
+      </ThemedGameBackground>
     )
   }
 
@@ -1116,7 +1116,7 @@ export default function PlayerGameScreen() {
   })()
 
   return (
-    <GameBackground variant="arena">
+    <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="player">
       {/* The slide is a sheet over the answer the player just saw, not a new
           screen: the question stays behind it, dimmed and set back, so the
           explanation reads as more detail rather than a page change. */}
@@ -1581,6 +1581,6 @@ export default function PlayerGameScreen() {
         </div>
         </div>
       </div>
-    </GameBackground>
+    </ThemedGameBackground>
   )
 }

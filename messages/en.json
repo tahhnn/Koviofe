@@ -271,7 +271,66 @@
     "titleRequired": "Quiz name cannot be empty.",
     "updateFailed": "Could not update the quiz.",
     "confirmDeleteBody": "Confirm quiz deletion",
-    "confirmDeleteWarning": "This cannot be undone. Are you sure you want to delete this quiz?"
+    "confirmDeleteWarning": "This cannot be undone. Are you sure you want to delete this quiz?",
+    "sharedQuizzes": "Shared",
+    "sharedSearchPlaceholder": "Search shared quizzes…",
+    "noSharedQuizzes": "No shared quizzes yet",
+    "noSharedHint": "When a host shares one of their quizzes, it shows up here.",
+    "sharedNoMatch": "No shared quiz matches that keyword.",
+    "byAuthor": "by {name}",
+    "yourQuiz": "Your quiz",
+    "open": "Open",
+    "share": "Share",
+    "shared": "Shared",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "pageOf": "Page {page} of {pages}",
+    "sharedBadgeHint": "This quiz is shared with everyone"
+  },
+  "luckyDraw": {
+    "tab": "Get LuckyDraw",
+    "pageTitle": "Get the LuckyDraw app",
+    "pageSubtitle": "Download the lucky-draw app to your computer and run prize draws right at the event.(Contact 0926175559 for support)",
+    "backToDashboard": "Back to Dashboard",
+    "appName": "LuckyDraw",
+    "appTagline": "The lucky-draw companion app for quizzZone — install it on your computer to run prize draws right at the event.",
+    "download": "Download",
+    "moreInfo": "More information",
+    "yourDevice": "Your device",
+    "scanTitle": "Scan to install",
+    "scanHint": "Open the camera on your phone and scan the code to get the {platform} build.",
+    "updatedOn": "Updated {date}",
+    "emptyTitle": "No build available yet",
+    "emptyHint": "The app has not been uploaded to the server. Once an administrator publishes an installer, the download button appears here.",
+    "platform": {
+      "windows": "Windows",
+      "macos": "macOS",
+      "android": "Android",
+      "ios": "iOS",
+      "other": "Other platforms"
+    },
+    "kind": {
+      "installer": "Installer",
+      "diskImage": "Disk image (.dmg)",
+      "portable": "Portable, no install needed",
+      "portableArchive": "Portable, zip archive",
+      "archive": "Zip archive"
+    },
+    "arch": {
+      "x64": "64-bit (x64)",
+      "arm64": "ARM64",
+      "x86": "32-bit (x86)"
+    },
+    "mac": {
+      "x64": "Intel Mac",
+      "arm64": "Apple Silicon (M1/M2/M3…)",
+      "x86": "32-bit"
+    },
+    "installHint": {
+      "windows": "Windows may show a SmartScreen warning because the app is not code-signed: click “More info”, then “Run anyway”. The installer adds a desktop shortcut; the portable build runs straight from the file.",
+      "macos": "Pick the right chip: M1/M2/M3 Macs need the Apple Silicon build, older Macs the Intel one. If macOS refuses to open it because the developer cannot be verified, go to System Settings › Privacy & Security and click “Open Anyway”.",
+      "android": "Open the file once it finishes downloading and allow installs from this source when prompted."
+    }
   },
   "host": {
     "loading": "Loading room…",
@@ -301,8 +360,6 @@
     "endQuickly": "End Game Quickly",
     "confirmEndTitle": "End the match?",
     "confirmEndBody": "Every player is sent to the results screen immediately and the room closes. This cannot be undone.",
-    "lobbyLeaderboard": "Lobby Leaderboard",
-    "liveScores": "Live score updates",
     "noPoints": "No points scored yet.",
     "privateRoom": "Private room",
     "prevQuestion": "Previous question",
@@ -377,7 +434,8 @@
     "gifLibrary": "GIF library",
     "upload": "Upload",
     "link": "Link",
-    "quotaExceeded": "You have used all of your image storage ({used}/{quota}). Delete some older images, or contact an administrator."
+    "quotaExceeded": "You have used all of your image storage ({used}/{quota}). Delete some older images, or contact an administrator.",
+    "tooManyPixels": "Image too large ({width}×{height}px). Maximum {max}px per side."
   },
   "editor": {
     "loading": "Loading quiz…",
@@ -494,7 +552,36 @@
     "importSameQuiz": "You cannot import questions from this same quiz",
     "importNothingSelected": "No questions were selected",
     "explanationPreviewExpand": "Expand",
-    "explanationPreviewClose": "Close preview"
+    "explanationPreviewClose": "Close preview",
+    "kvSectionTitle": "Event background (KV)",
+    "kvProOnly": "Pro",
+    "kvHostLabel": "Projector screen",
+    "kvHostHint": "16:9 · 1920×1080",
+    "kvPlayerLabel": "Player screen",
+    "kvPlayerHint": "9:16 · 1080×1920",
+    "kvRemove": "Remove background",
+    "kvUploadFailed": "Upload failed",
+    "kvOverlayLabel": "Scrim",
+    "kvOverlayHint": "At least {min}% so text stays readable on a projector.",
+    "kvLogoLabel": "Event logo",
+    "kvLogoHint": "Transparent PNG · shown on a dark background",
+    "kvOverlayColorLabel": "Scrim colour",
+    "kvOverlayColorReset": "Default",
+    "kvOverlayPreviewText": "Sample text on background",
+    "kvOverlayLightWarning": "That scrim is quite light — check the preview above; white text may disappear on a projector.",
+    "shareTitle": "Share quiz",
+    "shareHint": "Share this quiz so every other host can find it, run a game from it, or take their own copy. Only you can change or delete the original.",
+    "shareAnswersWarning": "Anyone it is shared with can see the correct answers and every explanation slide.",
+    "sharePublic": "Let others find, host and duplicate it",
+    "shareSaved": "Sharing updated",
+    "shareFailed": "Could not update sharing",
+    "readOnlyBanner": "This quiz was shared by someone else — you can only view it.",
+    "readOnlyTitle": "Read-only",
+    "readOnlyDuplicateHint": "Duplicate it to get your own copy and change that freely.",
+    "duplicateToMine": "Duplicate to my quizzes",
+    "duplicating": "Duplicating…",
+    "duplicated": "Duplicated",
+    "shareCopyWarning": "Others can duplicate this into a quiz of their own. A copy someone already took cannot be recalled, even after you turn sharing off."
   },
   "adminUsers": {
     "title": "User management",
@@ -764,7 +851,13 @@
     "otherRoom": "Pick another room",
     "rejoin": "Join again",
     "continue": "Continue",
-    "otherOption": "Other options"
+    "otherOption": "Other options",
+    "quizConflictTitle": "Someone else just saved",
+    "quizConflictBody": "Someone saved while you were editing. Reload to get their version, then make your change again.",
+    "quizInPlayTitle": "Quiz is in play",
+    "quizInPlayBody": "A room is running this quiz right now. Wait for it to finish — editing now would break the game in progress.",
+    "duplicateInsteadTitle": "You cannot edit this quiz",
+    "duplicateInsteadBody": "Only its owner can change a shared quiz. Duplicate it into your own quizzes and edit the copy."
   },
   "tours": {
     "finish": "Finish",
