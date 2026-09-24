@@ -6,17 +6,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { joinGameSession } from '@/app/actions/quizzes'
-import { checkRoomByPin, listPublicRooms } from '@/app/actions/game'
+import { joinRoom, listOpenRooms, lookupRoomByPin } from '@/lib/player-join'
 import { GameBackground } from '@/components/game-background'
 import { BrandMark } from '@/components/brand-mark'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { TourButton } from '@/components/tour-button'
 import { playerJoinTour } from '@/lib/tours'
-import { formatApiErrorInline, isStaleDeploymentError } from '@/lib/api-errors'
+import { formatApiErrorInline } from '@/lib/api-errors'
 import { ArrowRight, Users } from 'lucide-react'
-
-const STALE_RELOAD_KEY = 'join_stale_deploy_reloaded'
 
 function JoinForm() {
   const t = useTranslations('join')
@@ -50,14 +47,14 @@ function JoinForm() {
   }, [pin])
 
   useEffect(() => {
-    listPublicRooms().then(setOpenRooms).catch(() => setOpenRooms([]))
+    listOpenRooms().then(setOpenRooms).catch(() => setOpenRooms([]))
   }, [])
 
   useEffect(() => {
     if (sessionCode.length >= 6) {
       const verifyRoom = async () => {
         setError('')
-        const room = await checkRoomByPin(sessionCode)
+        const room = await lookupRoomByPin(sessionCode)
         if (!room) {
           setError(formatApiErrorInline('No room found for this PIN', tErrors))
           setRoomStatus(null)
@@ -112,10 +109,8 @@ function JoinForm() {
     }
 
     try {
-      const result = await joinGameSession(sessionCode.trim(), username)
+      const result = await joinRoom(sessionCode.trim(), username)
       if (!result.ok) {
-        // The action reports failures as data now: a thrown one would reach us
-        // redacted as "An error occurred in the Server Components render".
         setError(formatApiErrorInline(result.error, tErrors))
         return
       }
@@ -131,15 +126,8 @@ function JoinForm() {
       sessionStorage.setItem(`pin_code_${result.sessionId}`, sessionCode.trim())
       router.push(`/play/${result.sessionId}`)
     } catch (err: any) {
-      // A tab opened before the last deploy calls Server Action ids the running
-      // build no longer has, and Next surfaces that as framework prose about
-      // deployments. Reload once — the flag stops a genuinely broken build from
-      // bouncing a player through reloads forever, and they then see the text.
-      if (isStaleDeploymentError(err) && !sessionStorage.getItem(STALE_RELOAD_KEY)) {
-        sessionStorage.setItem(STALE_RELOAD_KEY, '1')
-        window.location.reload()
-        return
-      }
+      // joinRoom reports failures as data; what lands here is the browser
+      // refusing sessionStorage (private mode, full quota).
       setError(formatApiErrorInline(err?.message || err, tErrors))
     } finally {
       setLoading(false)

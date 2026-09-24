@@ -101,11 +101,18 @@ export default function ProfileSettingsPage() {
 
   const ents = license?.entitlements
   const usage = license?.usage
+  const showPlans = license?.enforcement === true
 
   return (
     <GameBackground variant="auth">
       <div className="flex-1 flex items-start justify-center px-4 py-6 sm:py-8">
         <div className="w-full max-w-3xl space-y-6">
+          {/* Plans only mean something while the backend enforces them. With
+              enforcement off every host gets the open entitlements, so a plan
+              card, a redeem box and a price list would describe limits that
+              do not exist. Hidden until /license/me says the gates are armed —
+              an unknown or failed read counts as off. */}
+          {showPlans && (
           <Card className="bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-[#e85d4c]/50" />
             <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
@@ -257,6 +264,7 @@ export default function ProfileSettingsPage() {
               .
             </p>
           </Card>
+          )}
 
           <Card className="bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-[#e85d4c]/40" />

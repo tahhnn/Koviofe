@@ -1,6 +1,7 @@
 'use server'
 
 import { apiRequest } from '@/services/api/client'
+import { mapGameSession } from '@/lib/game-session'
 import { revalidatePath } from 'next/cache'
 import { getTranslations } from 'next-intl/server'
 import type { BrandingPatch } from '@/lib/theme'
@@ -862,50 +863,7 @@ export async function updateRoomPrivacy(sessionId: string, isPrivate: boolean) {
 
 export async function getGameSession(sessionId: string, playerToken?: string) {
   const extra = playerToken ? { 'X-Player-Token': playerToken } : undefined
-  const data = await apiRequest(`/rooms/${sessionId}`, 'GET', undefined, extra)
-
-  // Host response: { room, players, max_players }; Player response: flat room fields
-  const room = data.room || data
-  if (!room?.id) {
-    throw new Error('NOT_FOUND')
-  }
-  const players = data.players || room.players || []
-
-  return {
-    id: String(room.id),
-    quizId: String(room.quiz_id || ''),
-    hostUserId: String(room.host_id || ''),
-    sessionCode: room.pin_code || '',
-    status: room.status === 'active' ? 'playing' : room.status,
-    isPrivate: room.is_private !== false,
-    currentQuestionIndex: room.current_question_index ?? data.current_question_index ?? -1,
-    questionActiveUntil: room.question_active_until ?? data.question_active_until ?? null,
-    themeConfig: room.theme_config ?? data.theme_config,
-    currentQuestion: data.current_question || room.current_question || null,
-    questionCount: Number(data.question_count || 0),
-    maxPlayers: Number(data.max_players || room.max_players || 0),
-    playerCount: Number(data.player_count ?? players.length),
-    planId: data.plan_id || room.plan_id || '',
-    planName: data.plan_name || room.plan_name || '',
-    participants: players.map((p: any) => ({
-      id: String(p.id),
-      sessionId: String(p.room_id || room.id),
-      username: p.nickname,
-      isAnonymous: !p.user_id,
-      totalPoints: p.score ?? 0,
-      correctAnswers: p.correct_answers ?? 0,
-      // Solo mode progress. current_question_id is omitted by the API once a
-      // player has no question left, which is exactly "finished" — but only in
-      // solo mode; classic players never carry one, so read it there instead.
-      answeredCount: p.answered_count ?? 0,
-      currentQuestionId: p.current_question_id ? String(p.current_question_id) : null,
-    })),
-    leaderboard: players.map((p: any) => ({
-      participantId: String(p.id),
-      username: p.nickname,
-      totalPoints: p.score,
-    })).sort((a: any, b: any) => b.totalPoints - a.totalPoints),
-  }
+  return mapGameSession(await apiRequest(`/rooms/${sessionId}`, 'GET', undefined, extra))
 }
 
 export async function startGameSession(sessionId: string) {
@@ -932,27 +890,6 @@ export async function endGameSession(sessionId: string) {
  * and showed that to the player, so the single most common join failure,
  * a nickname already taken in the room, was reported as an internal error.
  */
-export async function joinGameSession(sessionCode: string, username: string, userId?: string) {
-  try {
-    const data = await apiRequest('/rooms/join', 'POST', {
-      pin_code: sessionCode,
-      nickname: username,
-    })
-
-    revalidatePath(`/play/${data.room_id}`)
-    return {
-      ok: true as const,
-      sessionId: String(data.room_id),
-      participantId: String(data.player_id),
-      playerToken: data.player_token, // Pass player signed token JWT
-      centrifugoToken: data.centrifugo_tok, // Pass Centrifugo client JWT
-      centrifugoClientId: data.centrifugo_cli,
-    }
-  } catch (e: any) {
-    return { ok: false as const, error: String(e?.message || 'Failed to join room') }
-  }
-}
-
 export async function getDashboardStats() {
   try {
     const rooms = await apiRequest('/logs', 'GET')

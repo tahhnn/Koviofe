@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFormatter, useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -36,6 +36,9 @@ import {
   Eye,
   Users2,
   Gift,
+  ChevronDown,
+  Settings as SettingsIcon,
+  Shield,
 } from 'lucide-react'
 import { BrandMark } from '@/components/brand-mark'
 import { LanguageSwitcher } from '@/components/language-switcher'
@@ -56,6 +59,28 @@ export default function DashboardPage() {
   const router = useRouter()
   const toast = useToast()
   const [user, setUser] = useState<any>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+
+  // Outside tap / Escape closes the phone menu. A full-screen backdrop cannot
+  // do it: the header's backdrop-blur makes it the containing block for fixed
+  // children, so "inset-0" would only cover the header.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Node
+      if (menuRef.current?.contains(target) || menuButtonRef.current?.contains(target)) return
+      setMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false)
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuOpen])
   const [quizzes, setQuizzes] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -273,15 +298,17 @@ export default function DashboardPage() {
 
       {/* Header */}
       <header className="border-b border-white/5 bg-[#080c14]/60 backdrop-blur-xl sticky top-0 z-50">
-        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap gap-y-2 items-center justify-between">
+        <div className="container mx-auto px-4 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between gap-3">
           <BrandMark />
-          <div className="flex flex-wrap justify-end items-center gap-2 sm:gap-4">
+
+          {/* Desktop: every action inline. */}
+          <div className="hidden sm:flex items-center gap-2 lg:gap-4">
             <LanguageSwitcher />
             {user?.role === 'admin' && (
               <Link href="/admin">
                 <Button
                   variant="ghost"
-                  className="text-[#e85d4c] hover:text-[#f2f0eb] hover:bg-[#e85d4c]/10 h-11 sm:h-9 rounded-xl font-medium text-xs border-none"
+                  className="text-[#e85d4c] hover:text-[#f2f0eb] hover:bg-[#e85d4c]/10 h-9 rounded-xl font-medium text-xs border-none"
                 >
                   {tAdmin('console')}
                 </Button>
@@ -290,7 +317,7 @@ export default function DashboardPage() {
             <Link href="/luckydraw">
               <Button
                 variant="ghost"
-                className="text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-white/5 h-11 sm:h-9 rounded-xl font-medium text-xs border-none flex items-center gap-1.5"
+                className="text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-white/5 h-9 rounded-xl font-medium text-xs border-none flex items-center gap-1.5"
               >
                 <Gift className="w-4 h-4" />
                 {tLucky('tab')}
@@ -299,38 +326,116 @@ export default function DashboardPage() {
             <Link href="/profile/settings">
               <Button
                 variant="ghost"
-                className="text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-white/5 h-11 sm:h-9 rounded-xl font-medium text-xs border-none"
+                className="text-[#9a9eab] hover:text-[#f2f0eb] hover:bg-white/5 h-9 rounded-xl font-medium text-xs border-none"
               >
                 {tCommon('settings')}
               </Button>
             </Link>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <div className="w-8 h-8 shrink-0 rounded-full bg-[#e85d4c]/20 border border-[#e85d4c]/30 flex items-center justify-center font-semibold text-xs text-[#e85d4c]">
                 {(user?.email?.[0] || 'H').toUpperCase()}
               </div>
-              <span className="text-sm font-medium text-[#c5c2ba] truncate max-w-28 sm:max-w-none">{user?.nickname || 'User'}</span>
+              <span className="text-sm font-medium text-[#c5c2ba] truncate max-w-40">{user?.nickname || 'User'}</span>
             </div>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={handleLogout}
-              className="border-[#2c313d] hover:bg-white/5 text-[#9a9eab] hover:text-[#f2f0eb] h-11 sm:h-9 rounded-xl transition-all flex items-center gap-1.5"
+              className="border-[#2c313d] hover:bg-white/5 text-[#9a9eab] hover:text-[#f2f0eb] h-9 rounded-xl transition-all flex items-center gap-1.5"
             >
               <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">{tCommon('signOut')}</span>
+              {tCommon('signOut')}
             </Button>
           </div>
+
+          {/* Phone: six actions wrapped onto four rows and ate a quarter of
+              the screen, so they fold into the avatar. The language switch
+              stays out — it is the one thing a visitor may need before they
+              can read the menu at all. */}
+          <div className="flex sm:hidden items-center gap-2">
+            <LanguageSwitcher />
+            <button
+              type="button"
+              ref={menuButtonRef}
+              onClick={() => setMenuOpen(o => !o)}
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
+              aria-label={tCommon('accountMenu')}
+              className="flex items-center gap-1 h-11 pl-1 pr-2 rounded-xl hover:bg-white/5 cursor-pointer"
+            >
+              <span className="w-8 h-8 shrink-0 rounded-full bg-[#e85d4c]/20 border border-[#e85d4c]/30 flex items-center justify-center font-semibold text-xs text-[#e85d4c]">
+                {(user?.email?.[0] || 'H').toUpperCase()}
+              </span>
+              <ChevronDown className={`w-4 h-4 text-[#9a9eab] transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
         </div>
+
+        {menuOpen && (
+            <div
+              ref={menuRef}
+              role="menu"
+              className="sm:hidden absolute right-4 top-full mt-2 z-50 w-64 max-w-[calc(100vw-2rem)] rounded-2xl border border-[#2c313d] bg-[#1a1d26] shadow-2xl p-2"
+            >
+              <div className="px-3 py-2.5 border-b border-[#2c313d] mb-1 min-w-0">
+                <p className="text-sm font-semibold text-[#f2f0eb] truncate">{user?.nickname || 'User'}</p>
+                {user?.email && <p className="text-xs text-[#9a9eab] truncate">{user.email}</p>}
+              </div>
+              {user?.role === 'admin' && (
+                <Link
+                  href="/admin"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center gap-3 h-11 px-3 rounded-xl text-sm font-medium text-[#e85d4c] hover:bg-[#e85d4c]/10"
+                >
+                  <Shield className="w-4 h-4" />
+                  {tAdmin('console')}
+                </Link>
+              )}
+              <Link
+                href="/luckydraw"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-3 h-11 px-3 rounded-xl text-sm font-medium text-[#c5c2ba] hover:bg-white/5"
+              >
+                <Gift className="w-4 h-4" />
+                {tLucky('tab')}
+              </Link>
+              <Link
+                href="/profile/settings"
+                role="menuitem"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-3 h-11 px-3 rounded-xl text-sm font-medium text-[#c5c2ba] hover:bg-white/5"
+              >
+                <SettingsIcon className="w-4 h-4" />
+                {tCommon('settings')}
+              </Link>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false)
+                  handleLogout()
+                }}
+                className="w-full flex items-center gap-3 h-11 px-3 rounded-xl text-sm font-medium text-[#9a9eab] hover:bg-white/5 hover:text-[#f2f0eb] cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                {tCommon('signOut')}
+              </button>
+            </div>
+        )}
       </header>
 
       {/* Main Content */}
       <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-12 max-w-7xl space-y-8 sm:space-y-12" data-tour="dashboard-header">
-        {isLicenseLocked(license) && (
+        {/* Both banners are about plan terms, which only bind while the
+            backend enforces them — see the plan card in /profile/settings. */}
+        {license?.enforcement === true && isLicenseLocked(license) && (
           <LicenseLockedBanner onRedeemed={async () => setLicense(await getMyLicense())} />
         )}
 
         {/* Only when not already locked: a lapsed account gets the stronger
             banner, and showing both would be two calls to action for one fix. */}
-        {!isLicenseLocked(license) && isLicenseExpiringSoon(license) && (
+        {license?.enforcement === true && !isLicenseLocked(license) && isLicenseExpiringSoon(license) && (
           <LicenseExpiringBanner
             days={license?.days_remaining ?? 0}
             onRedeemed={async () => setLicense(await getMyLicense())}

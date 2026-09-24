@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { clientIpHeaders } from '@/lib/client-ip'
 
 export interface UserSession {
   user: {
@@ -28,7 +29,9 @@ export async function getSession(): Promise<UserSession | null> {
       if (refreshToken) {
         const refreshRes = await fetch(`${apiBase()}/auth/refresh`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // AuthRateLimit keys on the client IP and allows 20/min; an
+          // unattributed refresh spends from a bucket shared by everyone.
+          headers: { 'Content-Type': 'application/json', ...(await clientIpHeaders()) },
           body: JSON.stringify({ refresh_token: refreshToken }),
         })
         if (refreshRes.ok) {
@@ -63,7 +66,9 @@ export async function getSession(): Promise<UserSession | null> {
       if (refreshToken) {
         const refreshRes = await fetch(`${apiBase()}/auth/refresh`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // AuthRateLimit keys on the client IP and allows 20/min; an
+          // unattributed refresh spends from a bucket shared by everyone.
+          headers: { 'Content-Type': 'application/json', ...(await clientIpHeaders()) },
           body: JSON.stringify({ refresh_token: refreshToken }),
         })
         if (refreshRes.ok) {

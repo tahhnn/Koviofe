@@ -3,93 +3,18 @@
 import { apiRequest } from '@/services/api/client'
 import { revalidatePath } from 'next/cache'
 
-// Submit answer for guest player
-export async function submitAnswer(
-  sessionId: string,
-  participantId: string,
-  questionId: string,
-  selectedOptionId: string | null,
-  timeSpent: number,
-  responseTimeMs: number = 0,
-  playerToken: string = ''
-) {
-  try {
-    const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082/api'
-    const res = await fetch(`${API_URL}/rooms/submit-answer`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Player-ID': participantId,
-        'X-Player-Token': playerToken,
-      },
-      body: JSON.stringify({
-        question_id: Number(questionId),
-        selected_option: selectedOptionId || '',
-        response_time_ms: responseTimeMs,
-      }),
-    })
-
-    const data = await res.json()
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to submit answer')
-    }
-
-    revalidatePath(`/host/${sessionId}`)
-    revalidatePath(`/play/${sessionId}`)
-
-    return {
-      id: participantId + '_' + questionId,
-      sessionId,
-      participantId,
-      questionId,
-      selectedOptionId,
-      timeSpent,
-      isCorrect: data.is_correct,
-      points: data.points_earned,
-      is_correct: data.is_correct,
-      points_earned: data.points_earned,
-      recorded: !!data.recorded,
-      question_type: data.question_type,
-      // Solo mode only, and only for questions the host gave a slide: the
-      // server sends the answer back with the submission so the player can be
-      // shown what was right before the explanation appears.
-      correct_answer: data.correct_answer ? String(data.correct_answer) : '',
-      explanation: data.explanation ? String(data.explanation) : '',
-    }
-  } catch (e: any) {
-    console.error('Error submitting answer: ', e)
-    return {
-      error: e.message || 'Error submitting answer',
-    }
-  }
-}
-
-// Get question by index (host sees full quiz; player uses dedicated safe endpoint)
-export async function getQuestionByIndex(sessionId: string, questionIndex: number, playerToken?: string) {
-  if (playerToken) {
-    const data = await apiRequest(
-      `/rooms/${sessionId}/questions/${questionIndex}`,
-      'GET',
-      undefined,
-      { 'X-Player-Token': playerToken }
-    )
-    const opts = Array.isArray(data.options) ? data.options : []
-    return {
-      id: String(data.id),
-      quizId: String(data.quiz_id),
-      questionText: data.content,
-      timeLimit: data.duration,
-      displayOrder: data.order,
-      // Never trust isCorrect from the player endpoint — strip answer keys.
-      options: parsedOptsToDrizzle(opts, '', true),
-      type: data.type,
-      index: typeof data.index === 'number' ? data.index : questionIndex,
-      total: typeof data.total === 'number' ? data.total : undefined,
-      // Server-side deadline — lets a reloading client resync its countdown
-      activeUntil: typeof data.active_until === 'string' ? data.active_until : undefined,
-    }
-  }
-
+/**
+ * Get question by index, for the host.
+ *
+ * Host-only on purpose. This used to take a player token and serve players
+ * too, from the safe endpoint; players now fetch their own question from the
+ * browser (lib/player-question.ts) because the whole room asks at the same
+ * moment when the host advances, and a server action per player made that
+ * burst queue on one Node process. The host is one caller per room, needs the
+ * answer key and the explanation, and authenticates with the httpOnly session
+ * cookie — which is exactly why this side stays on the server.
+ */
+export async function getQuestionByIndex(sessionId: string, questionIndex: number) {
   const data = await apiRequest(`/rooms/${sessionId}`)
   const room = data?.room
   if (room?.status === 'finished') {
@@ -118,54 +43,6 @@ export async function getQuestionByIndex(sessionId: string, questionIndex: numbe
     options: parsedOptsToDrizzle(parsedOptions, question.correct_answer),
     type: question.type,
     correctAnswer: question.correct_answer,
-  }
-}
-
-/**
- * Player-side question fetch that reports failures as data, not exceptions.
- *
- * Next.js redacts any error thrown out of a Server Action in a production
- * build: the client receives "An error occurred in the Server Components
- * render…" and nothing else. Every branch that used to read the thrown
- * message — `msg.includes('NO_MORE_QUESTIONS')`, `msg === 'ROOM_FINISHED'` —
- * therefore never matched in production, so a solo player who finished their
- * last question fell through to a generic "could not load question" instead of
- * the results screen.
- *
- * Returned values are serialized normally, so the classification has to happen
- * here on the server, where the real message still exists.
- */
-export type PlayerQuestionFailure =
-  | 'NO_MORE_QUESTIONS'
-  | 'ROOM_FINISHED'
-  | 'NOT_ACTIVE'
-  | 'NOT_FOUND'
-  | 'ERROR'
-
-function classifyQuestionError(raw: string): PlayerQuestionFailure {
-  const m = raw.toLowerCase()
-  if (raw.includes('NO_MORE_QUESTIONS')) return 'NO_MORE_QUESTIONS'
-  if (raw.includes('ROOM_FINISHED')) return 'ROOM_FINISHED'
-  // Both languages: Localize() rewrites these before they reach us.
-  if (/not currently active|room is not active|hiện không mở|phòng chưa bắt đầu/.test(m)) return 'NOT_ACTIVE'
-  if (/not found|không tìm thấy/.test(m)) return 'NOT_FOUND'
-  return 'ERROR'
-}
-
-export async function fetchPlayerQuestion(
-  sessionId: string,
-  questionIndex: number,
-  playerToken?: string
-) {
-  try {
-    const question = await getQuestionByIndex(sessionId, questionIndex, playerToken)
-    if (!question) {
-      return { ok: false as const, code: 'NOT_FOUND' as PlayerQuestionFailure, message: 'Question not found' }
-    }
-    return { ok: true as const, question }
-  } catch (e: any) {
-    const raw = String(e?.message || 'Unknown error')
-    return { ok: false as const, code: classifyQuestionError(raw), message: raw }
   }
 }
 
@@ -415,27 +292,6 @@ export async function endQuestion(sessionId: string) {
   }
 }
 
-/**
- * The leaderboard slide's data: the top rows, the caller's own rank, and the
- * size of the room. Every player reads this once per question, so it is its own
- * endpoint rather than getRoomResults — that one returns the whole roster.
- */
-export async function getRoomStandings(sessionId: string, playerToken?: string) {
-  const extra = playerToken ? { 'X-Player-Token': playerToken } : undefined
-  const data = await apiRequest(`/rooms/${sessionId}/standings`, 'GET', undefined, extra)
-  const row = (p: any) => ({
-    id: String(p.id),
-    nickname: String(p.nickname || ''),
-    score: Number(p.score || 0),
-    rank: Number(p.rank || 0),
-  })
-  return {
-    top: (data.top || []).map(row),
-    me: data.me ? row(data.me) : null,
-    total: Number(data.total || 0),
-  }
-}
-
 /** Host-paced only: push the leaderboard slide to every screen in the room. */
 export async function showLeaderboard(sessionId: string) {
   try {
@@ -458,30 +314,3 @@ export async function explainQuestion(sessionId: string) {
   }
 }
 
-// Check room status by PIN code
-export async function checkRoomByPin(pin: string) {
-  try {
-    const data = await apiRequest(`/rooms/pin/${pin}`)
-    return data
-  } catch (e) {
-    console.error('Error checking room by PIN: ', e)
-    return null
-  }
-}
-
-export async function listPublicRooms() {
-  try {
-    const data = await apiRequest('/rooms/public')
-    return (data.rooms || []) as Array<{
-      id: number
-      pin_code: string
-      status: string
-      quiz_title: string
-      player_count: number
-      max_players: number
-    }>
-  } catch (e) {
-    console.error('Error listing public rooms: ', e)
-    return []
-  }
-}

@@ -6,8 +6,12 @@ import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useWebSocket } from '@/hooks/use-websocket'
-import { fetchPlayerQuestion, submitAnswer, getQuizQuestionsCount, getRoomStandings } from '@/app/actions/game'
-import { getGameSession } from '@/app/actions/quizzes'
+// Neither of these is a server action, on purpose. Both arrive as a burst from
+// the whole room at once — one when the host advances, one when everybody
+// answers — and that burst is what a single Node process cannot take.
+import { submitAnswer } from '@/lib/submit-answer'
+import { fetchPlayerQuestion } from '@/lib/player-question'
+import { fetchPlayerSession, fetchPlayerStandings } from '@/lib/player-session'
 import { ThemedGameBackground } from '@/components/game-background'
 import { Hourglass, ArrowRight, XCircle, Check, MapPin } from 'lucide-react'
 import {
@@ -29,6 +33,19 @@ const FINISH_DWELL_S = 4
  *  Shorter than the explanation: there is nothing to read, only a rank to
  *  find — and the continue button is there for whoever has already found it. */
 const LEADERBOARD_DWELL_S = 6
+/** How often the lobby poll re-asks the server while the websocket is down.
+ *  This is the only channel then, so it has to be quick. */
+const POLL_FALLBACK_MS = 2500
+/** And how often while the websocket is up, where it is a safety net and
+ *  nothing more: every state change arrives as a push.
+ *
+ *  Keeping the 2.5s rate with a live socket cost two server actions per player
+ *  per 2.5s, all of them landing on one Node process. Measured 2026-09-23: the
+ *  server-action path tops out at ~140 req/s on this box, so a room of 500
+ *  already pushed p50 to 1.9s and 1000 pushed p95 to 10s while the Go backend
+ *  sat at 34% CPU. Twenty seconds keeps the dropped-socket recovery this poll
+ *  exists for and takes the steady-state cost down by 8x. */
+const POLL_IDLE_MS = 20000
 
 interface Option {
   id: string
@@ -247,7 +264,7 @@ export default function PlayerGameScreen() {
     for (let attempt = 0; attempt < 2; attempt++) {
       if (stale()) return
       try {
-        const data = await getRoomStandings(sessionId, playerTokenRef.current || undefined)
+        const data = await fetchPlayerStandings(sessionId, playerTokenRef.current || undefined)
         if (stale()) return
         setBoardExiting(false)
         sheetActiveRef.current = true
@@ -452,7 +469,7 @@ export default function PlayerGameScreen() {
     if (!boardOpen || boardExiting || !isPlayerPaced) return
     const id = setInterval(async () => {
       try {
-        const data = await getRoomStandings(sessionId, playerTokenRef.current || undefined)
+        const data = await fetchPlayerStandings(sessionId, playerTokenRef.current || undefined)
         // Only into a board that is still open: a response landing after the
         // player moved on must not put it back.
         setStandings(prev => (prev ? data : prev))
@@ -562,7 +579,7 @@ export default function PlayerGameScreen() {
         const pToken = sessionStorage.getItem(`player_token_${sessionId}`)
         if (pToken) setPlayerToken(pToken)
 
-        const session = await getGameSession(sessionId, pToken || undefined)
+        const session = await fetchPlayerSession(sessionId, pToken || undefined)
         if (session.status === 'finished') {
           router.push(`/results/${sessionId}`)
           return
@@ -575,10 +592,9 @@ export default function PlayerGameScreen() {
         setIsPlayerPaced(playerPaced)
         applyExplanationDuration(config)
 
-        const count = await getQuizQuestionsCount(sessionId, pToken || undefined)
-        if (count > 0) {
-          setTotalQuestions(count)
-        } else if (session.questionCount > 0) {
+        // The player response already carries question_count; the separate
+        // count call it used to make re-read this same endpoint.
+        if (session.questionCount > 0) {
           setTotalQuestions(session.questionCount)
         }
 
@@ -649,7 +665,7 @@ export default function PlayerGameScreen() {
     const poll = async () => {
       try {
         const pToken = playerTokenRef.current || sessionStorage.getItem(`player_token_${sessionId}`) || ''
-        const session = await getGameSession(sessionId, pToken || undefined)
+        const session = await fetchPlayerSession(sessionId, pToken || undefined)
         if (cancelled) return
 
         if (session.status === 'finished') {
@@ -707,13 +723,19 @@ export default function PlayerGameScreen() {
       }
     }
 
+    // One poll on every arm, including the one that fires the moment the
+    // socket drops: that is the fast resync, and it makes the slower idle
+    // interval below safe to use.
     poll()
-    const id = setInterval(poll, 2500)
+    const id = setInterval(poll, connected ? POLL_IDLE_MS : POLL_FALLBACK_MS)
     return () => {
       cancelled = true
       clearInterval(id)
     }
-  }, [loading, sessionId, router, beginGameFromLobby, applyQuestion, applyExplanationDuration])
+    // `connected` is a dependency on purpose: the effect re-arms on every
+    // socket transition, which both re-picks the interval and forces the
+    // immediate poll above.
+  }, [loading, connected, sessionId, router, beginGameFromLobby, applyQuestion, applyExplanationDuration])
 
   useEffect(() => {
     if (!connected) return
@@ -816,7 +838,7 @@ export default function PlayerGameScreen() {
     const unsubGameStart = on('game:started', async () => {
       try {
         const pToken = playerTokenRef.current || sessionStorage.getItem(`player_token_${sessionId}`) || ''
-        const session = await getGameSession(sessionId, pToken || undefined)
+        const session = await fetchPlayerSession(sessionId, pToken || undefined)
         let config: any = {}
         try { config = JSON.parse(session.themeConfig || '{}') } catch { config = {} }
         const playerPaced = config.game_mode === 'player_paced'
@@ -867,11 +889,16 @@ export default function PlayerGameScreen() {
         // never sees this sentinel. The host closed the room while this answer
         // was in flight: there is nothing to score and nowhere to go but the
         // podium.
-        if (res.error.includes('ROOM_FINISHED')) {
+        //
+        // Branch on `code`, not on the message: the API now answers a browser
+        // in the browser's language, where the old server-side fetch always
+        // got English, so matching English substrings here would have gone
+        // quietly dead for every Vietnamese player.
+        if (res.code === 'ROOM_FINISHED') {
           router.push(`/results/${sessionId}`)
           return
         }
-        if (res.error.includes('not active') || res.error.includes('exceeded') || res.error.includes('expired')) {
+        if (res.code === 'LATE') {
           const fb = { isCorrect: false, pointsEarned: 0, isPoll }
           if (isPlayerPacedRef.current || isPoll) {
             setFeedback(fb)
@@ -1275,13 +1302,18 @@ export default function PlayerGameScreen() {
         </div>
       )}
       <div
-        className={`flex-1 flex items-start sm:items-center justify-center overflow-y-auto p-3 sm:p-4 md:p-6 pb-[calc(0.75rem+env(safe-area-inset-bottom))] ${
+        // On a phone the round is one screen: pinned to the viewport height so
+        // the answers and the submit button are always in reach, with the
+        // question card giving up space (and scrolling inside itself) when the
+        // text is long. Taller than that — the leaderboard after submitting —
+        // still scrolls here as before.
+        className={`flex-1 flex items-start sm:items-center justify-center overflow-y-auto p-3 sm:p-4 md:p-6 pb-[calc(0.75rem+env(safe-area-inset-bottom))] max-sm:h-[100dvh] ${
           (explanationDoc && !explanationExiting) || (standings && !boardExiting) || (finishSlide && !finishExiting)
             ? 'explain-backdrop-recede'
             : ''
         }`}
       >
-        <div className="max-w-3xl w-full space-y-3 sm:space-y-5 md:space-y-6">
+        <div className="max-w-3xl w-full flex flex-col gap-2.5 sm:gap-5 md:gap-6 max-sm:h-full">
         {/* No "reconnecting" banner. A dropped socket is not something a player
             can act on, and it is not fatal either: realtime here is receive-only
             and the 2.5s REST poll drives the game regardless. The banner only
@@ -1289,7 +1321,7 @@ export default function PlayerGameScreen() {
             because the client's own keepalive was killing the connection. */}
 
         {isPlayerPaced && totalQuestions > 0 && (
-          <div className="flex justify-between items-center text-sm text-[#9a9eab]">
+          <div className="shrink-0 flex justify-between items-center text-sm text-[#9a9eab]">
             <span>{t('soloPace')}</span>
             <span className="text-[#f2f0eb]">
               {localQuestionIndex + 1} / {totalQuestions}
@@ -1297,14 +1329,15 @@ export default function PlayerGameScreen() {
           </div>
         )}
 
-        <div className="sticky top-0 z-30 rounded-2xl border border-[#2c313d] bg-[#1a1d26]/90 backdrop-blur-md p-3 sm:p-5">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-[#9a9eab]">{t('timeLeft')}</span>
-            <span className={`text-xl sm:text-2xl font-semibold tabular-nums ${timeLeft <= 5 ? 'text-[#e85d4c]' : 'text-[#f2f0eb]'}`}>
+        {/* One row on a phone (bar + seconds); label above the bar from sm up. */}
+        <div className="shrink-0 sticky top-0 z-30 rounded-2xl border border-[#2c313d] bg-[#1a1d26]/90 backdrop-blur-md px-3 py-2.5 sm:p-5 flex items-center gap-3 sm:flex-col sm:items-stretch sm:gap-3">
+          <div className="flex items-center justify-between sm:w-full order-2 sm:order-none">
+            <span className="hidden sm:inline text-sm text-[#9a9eab]">{t('timeLeft')}</span>
+            <span className={`text-lg sm:text-2xl font-semibold tabular-nums ${timeLeft <= 5 ? 'text-[#e85d4c]' : 'text-[#f2f0eb]'}`}>
               {timeLeft}s
             </span>
           </div>
-          <div className="w-full bg-[#12141a] rounded-full h-2 overflow-hidden">
+          <div className="flex-1 sm:flex-none w-full bg-[#12141a] rounded-full h-2 overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-100 ${
                 timeLeft <= 5 ? 'bg-[#e85d4c]' : 'bg-[#2dd4bf]'
@@ -1318,15 +1351,24 @@ export default function PlayerGameScreen() {
 
         {(() => {
           const parsedContent = parseQuestionContent(currentQuestion.questionText)
+          // Long questions step the type down on a phone rather than pushing
+          // the answers off screen; larger screens keep the original scale.
+          const len = (parsedContent.text || '').length
+          const questionSize =
+            len > 260
+              ? 'text-[15px] sm:text-lg md:text-xl'
+              : len > 120
+                ? 'text-base sm:text-xl md:text-2xl'
+                : 'text-lg sm:text-xl md:text-2xl'
           return (
-            <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-4 sm:p-6 md:p-8 space-y-4">
-              <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-[#f2f0eb] leading-snug">
+            <div className="max-sm:min-h-24 max-sm:shrink max-sm:overflow-y-auto overscroll-contain rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-3.5 sm:p-6 md:p-8 space-y-3 sm:space-y-4">
+              <h1 className={`${questionSize} font-semibold text-[#f2f0eb] leading-snug [overflow-wrap:anywhere]`}>
                 {parsedContent.text}
               </h1>
               {parsedContent.mediaUrl && !isPinAnswer && (
-                <div className="w-full max-h-[30vh] sm:max-h-64 rounded-xl overflow-hidden border border-[#2c313d] bg-[#12141a] flex items-center justify-center">
+                <div className="w-full max-h-[22dvh] sm:max-h-64 rounded-xl overflow-hidden border border-[#2c313d] bg-[#12141a] flex items-center justify-center">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={parsedContent.mediaUrl} alt="" className="max-h-[30vh] sm:max-h-64 w-auto max-w-full object-contain" />
+                  <img src={parsedContent.mediaUrl} alt="" className="max-h-[22dvh] sm:max-h-64 w-auto max-w-full object-contain" />
                 </div>
               )}
             </div>
@@ -1334,7 +1376,7 @@ export default function PlayerGameScreen() {
         })()}
 
         {isPinAnswer ? (
-          <div className="space-y-3">
+          <div className="shrink-0 space-y-3">
             {(() => {
               const parsedContent = parseQuestionContent(currentQuestion.questionText)
               if (!parsedContent.mediaUrl) {
@@ -1392,7 +1434,7 @@ export default function PlayerGameScreen() {
             })()}
           </div>
         ) : isShortAnswer ? (
-          <div className="space-y-4">
+          <div className="shrink-0 space-y-4">
             {!submitted && (
               <form
                 onSubmit={(e) => {
@@ -1419,8 +1461,11 @@ export default function PlayerGameScreen() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 [&>*:last-child:nth-child(odd)]:col-span-2">
-            {(currentQuestion.options || []).map((option, index) => {
+          <div className="shrink-0 grid grid-cols-2 gap-2 sm:gap-3 [&>*:last-child:nth-child(odd)]:col-span-2">
+            {(() => {
+              // Same idea as the question: long choices get tighter tiles on a phone.
+              const longOptions = (currentQuestion.options || []).some(o => (o.optionText || '').length > 40)
+              return (currentQuestion.options || []).map((option, index) => {
               const isSelected = selectedAnswer === option.id
               // Marking the right option is how the answer is actually shown —
               // right or wrong, and in both modes. It only lights up once the
@@ -1433,7 +1478,7 @@ export default function PlayerGameScreen() {
                   key={option.id}
                   onClick={() => !submitted && setSelectedAnswer(option.id)}
                   disabled={submitted}
-                  className={`relative p-4 sm:p-5 min-h-14 flex items-center rounded-xl text-left font-medium transition-all duration-200 active:scale-[0.98] touch-manipulation select-none ${answerColors[index % answerColors.length]} ${
+                  className={`relative ${longOptions ? 'p-3' : 'p-4'} sm:p-5 min-h-14 flex items-center rounded-xl text-left font-medium transition-all duration-200 active:scale-[0.98] touch-manipulation select-none ${answerColors[index % answerColors.length]} ${
                     isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-[#12141a]' : ''
                   } ${
                     isCorrectOption
@@ -1450,7 +1495,7 @@ export default function PlayerGameScreen() {
                   )}
                   <div className="w-full min-w-0 space-y-2">
                     {option.optionText ? (
-                      <div className="text-base sm:text-lg [overflow-wrap:anywhere] font-semibold">{option.optionText}</div>
+                      <div className={`${longOptions ? 'text-sm leading-snug' : 'text-base'} sm:text-lg [overflow-wrap:anywhere] font-semibold`}>{option.optionText}</div>
                     ) : null}
                     {option.mediaUrl ? (
                       <div className="w-full max-h-24 sm:max-h-32 md:max-h-40 rounded-lg overflow-hidden border border-black/20 bg-black/10">
@@ -1465,11 +1510,13 @@ export default function PlayerGameScreen() {
                   </div>
                 </button>
               )
-            })}
+              })
+            })()}
           </div>
         )}
 
-        <div className="pt-1">
+        {/* mt-auto: on a phone the button sits at the bottom, under the thumb. */}
+        <div className="shrink-0 mt-auto sm:mt-0 pt-1">
           {!submitted ? (
             <div className="sticky bottom-0 z-30 -mx-3 sm:mx-0 px-3 sm:px-0 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] bg-[#12141a]/90 backdrop-blur-md sm:bg-transparent sm:backdrop-blur-none space-y-2">
               {submitError && (

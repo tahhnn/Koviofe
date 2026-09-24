@@ -13,7 +13,6 @@ import {
   ExplanationDoc,
   ExplanationElement,
   ExplanationLayout,
-  ExplanationSlide,
   ExplanationThumbnail,
   emptyExplanation,
   isExplanationEmpty,
@@ -470,9 +469,11 @@ export function ExplanationEditor({
             </div>
             {/* Capped by the height left over at 16:9 so the slide is as large
                 as the window allows and never needs scrolling — the same rule
-                the host screen uses. */}
-            <div className="w-full aspect-video max-h-[calc(100dvh-9rem)] max-w-[calc((100dvh-9rem)*16/9)] mx-auto rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
-              <ExplanationSlide doc={doc} variant="stage" animate={false} />
+                the host screen uses. Rendered as a scaled stage, not a
+                responsive one: on a phone the responsive slide switched to its
+                narrow layout inside a ~200px-tall box and the text vanished. */}
+            <div className="w-full max-w-[calc((100dvh-9rem)*16/9)] mx-auto shadow-2xl">
+              <ExplanationThumbnail doc={doc} />
             </div>
           </div>
         </div>

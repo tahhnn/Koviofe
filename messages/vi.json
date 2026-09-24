@@ -17,7 +17,8 @@
     "back": "Quay lại",
     "retry": "Thử lại",
     "copy": "Sao chép",
-    "copied": "Đã sao chép"
+    "copied": "Đã sao chép",
+    "accountMenu": "Menu tài khoản"
   },
   "nav": {
     "signIn": "Đăng nhập",
@@ -324,7 +325,7 @@
     },
     "mac": {
       "x64": "Máy Intel",
-      "arm64": "Apple Silicon (M1/M2/M3…)",
+      "arm64": "arm64",
       "x86": "32-bit"
     },
     "installHint": {

@@ -13,10 +13,25 @@ function apiBase(): string {
   ).replace(/\/$/, '')
 }
 
-async function fetchProfile(token: string): Promise<{ ok: boolean; role: string | null }> {
+/** The visitor's address, so the API attributes these calls to them rather
+ *  than to this container. /auth/refresh is behind AuthRateLimit — 20 per IP
+ *  per minute, failing closed — and every refresh in the system arrived from
+ *  the same address until this was forwarded. Middleware reads it off the
+ *  request directly; the gateway has already resolved it and a client cannot
+ *  set it (see lib/client-ip.ts). */
+function forwardedFor(request: NextRequest): Record<string, string> {
+  const out: Record<string, string> = {}
+  const xff = request.headers.get('x-forwarded-for')
+  if (xff) out['X-Forwarded-For'] = xff
+  const real = request.headers.get('x-real-ip')
+  if (real) out['X-Real-IP'] = real
+  return out
+}
+
+async function fetchProfile(token: string, fwd: Record<string, string>): Promise<{ ok: boolean; role: string | null }> {
   try {
     const res = await fetch(`${apiBase()}/auth/profile`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${token}`, ...fwd },
       cache: 'no-store',
     })
     if (!res.ok) return { ok: false, role: null }
@@ -32,11 +47,11 @@ async function fetchProfile(token: string): Promise<{ ok: boolean; role: string 
   }
 }
 
-async function tryRefresh(refreshToken: string): Promise<{ token: string; refresh_token: string } | null> {
+async function tryRefresh(refreshToken: string, fwd: Record<string, string>): Promise<{ token: string; refresh_token: string } | null> {
   try {
     const res = await fetch(`${apiBase()}/auth/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...fwd },
       body: JSON.stringify({ refresh_token: refreshToken }),
       cache: 'no-store',
     })
@@ -82,7 +97,7 @@ export async function middleware(request: NextRequest) {
   const responseCookies: { name: string; value: string; maxAge: number }[] = []
 
   if (token) {
-    const profile = await fetchProfile(token)
+    const profile = await fetchProfile(token, forwardedFor(request))
     if (profile.ok) {
       authenticated = true
       role = profile.role
@@ -90,9 +105,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!authenticated && refreshToken) {
-    const refreshed = await tryRefresh(refreshToken)
+    const refreshed = await tryRefresh(refreshToken, forwardedFor(request))
     if (refreshed?.token) {
-      const profile = await fetchProfile(refreshed.token)
+      const profile = await fetchProfile(refreshed.token, forwardedFor(request))
       if (profile.ok) {
         authenticated = true
         role = profile.role

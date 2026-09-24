@@ -17,7 +17,8 @@
     "back": "Back",
     "retry": "Retry",
     "copy": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "accountMenu": "Account menu"
   },
   "nav": {
     "signIn": "Sign in",
@@ -323,7 +324,7 @@
     },
     "mac": {
       "x64": "Intel Mac",
-      "arm64": "Apple Silicon (M1/M2/M3…)",
+      "arm64": "arm64",
       "x86": "32-bit"
     },
     "installHint": {

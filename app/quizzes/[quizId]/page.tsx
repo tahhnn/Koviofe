@@ -851,6 +851,15 @@ export default function QuizEditorPage() {
   const inputClass =
     'bg-[#12141a] border-[#2c313d] focus:border-[#e85d4c] text-[#f2f0eb] placeholder:text-[#5c6170] rounded-xl'
 
+  // Grow a textarea to fit what is in it. At rows={2} a question longer than a
+  // line or two was edited through a slot on a phone; field-sizing would do
+  // this in CSS, but iOS Safari does not support it.
+  const autoGrow = (el: HTMLTextAreaElement | null) => {
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
   const slideSettingsContent = activeQuestion ? (
     <div className="space-y-6">
       <div className="space-y-4">
@@ -1201,8 +1210,10 @@ export default function QuizEditorPage() {
                   key={`text-${activeQuestion.id}`}
                   defaultValue={activeParsedContent.text}
                   placeholder={t('questionPlaceholder')}
-                  rows={2}
-                  className={`w-full ${inputClass} px-3 sm:px-6 py-3 sm:py-5 text-base sm:text-xl md:text-2xl font-semibold resize-none transition-all text-center`}
+                  rows={3}
+                  ref={autoGrow}
+                  onInput={(e) => autoGrow(e.currentTarget)}
+                  className={`w-full ${inputClass} px-4 sm:px-6 py-3 sm:py-5 min-h-28 sm:min-h-32 max-h-[60dvh] overflow-y-auto text-base sm:text-xl md:text-2xl font-semibold leading-snug resize-none text-left sm:text-center`}
                   onBlur={(e) =>
                     handleQuestionTextBlur(
                       activeQuestion.id,
@@ -1367,16 +1378,25 @@ export default function QuizEditorPage() {
                               : 'border-[#2c313d]'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-start gap-3">
                             <div className={`border w-9 h-9 rounded-lg flex items-center justify-center font-semibold text-sm shrink-0 ${badgeColor}`}>
                               {String.fromCharCode(65 + oIndex)}
                             </div>
-                            <input
+                            <textarea
                               key={`opt-input-${activeQuestion.id}-${option.id}`}
-                              type="text"
+                              rows={1}
+                              ref={autoGrow}
+                              onInput={(e) => autoGrow(e.currentTarget)}
+                              // An answer is one line of data; wrap it, don't let Enter split it.
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                                  e.preventDefault()
+                                  e.currentTarget.blur()
+                                }
+                              }}
                               defaultValue={option.optionText}
                               placeholder={`Answer choice ${oIndex + 1}...`}
-                              className="flex-1 min-w-0 bg-transparent border-none text-[#f2f0eb] text-base font-medium placeholder:text-[#5c6170] focus:outline-none"
+                              className="flex-1 min-w-0 bg-transparent border-none text-[#f2f0eb] text-base font-medium leading-snug placeholder:text-[#5c6170] focus:outline-none resize-none overflow-hidden py-1"
                               onBlur={(e) =>
                                 handleOptionTextBlur(
                                   activeQuestion.id,
