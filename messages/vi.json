@@ -343,6 +343,8 @@
     "invite": "Mời tham gia",
     "inviteHint": "Quét để vào phòng, hoặc sao chép link gửi vào nhóm chat.",
     "preparingQr": "Đang tạo mã QR…",
+    "enlargeQr": "Bấm để phóng to mã QR",
+    "closeQr": "Đóng mã QR",
     "soloMode": "Đang bật chế độ tự chơi",
     "liveScoreboard": "Bảng điểm trực tiếp",
     "loadingQuestion": "Đang tải câu hỏi…",

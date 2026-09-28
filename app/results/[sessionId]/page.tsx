@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { getRoomResults } from '@/app/actions/game'
+import { fetchPlayerResults } from '@/lib/player-session'
 import { ThemedGameBackground } from '@/components/game-background'
 import { BrandMark } from '@/components/brand-mark'
 import { XCircle } from 'lucide-react'
@@ -57,7 +58,11 @@ export default function ResultsPage() {
       const playerToken = sessionStorage.getItem(`player_token_${sessionId}`)
       setIsPlayer(!!playerToken)
 
-      const { players, endedReason: reason, status, themeConfig: theme } = await getRoomResults(sessionId, playerToken || undefined)
+      // Players read straight from the API (lib/player-session.ts); the host's
+      // credential is an httpOnly cookie, so the host stays on the server action.
+      const { players, endedReason: reason, status, themeConfig: theme } = playerToken
+        ? await fetchPlayerResults(sessionId, playerToken)
+        : await getRoomResults(sessionId)
       setThemeConfig(theme)
       setLeaderboard(players)
       setRoomFinished(status === 'finished')

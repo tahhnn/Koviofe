@@ -2,6 +2,7 @@
 
 import { apiRequest } from '@/services/api/client'
 import { revalidatePath } from 'next/cache'
+import { mapRoomResults } from '@/lib/game-session'
 
 /**
  * Get question by index, for the host.
@@ -104,7 +105,9 @@ export async function getLeaderboard(sessionId: string, playerToken?: string) {
     }))
 }
 
-// Final standings for the results screen. Deliberately not getLeaderboard:
+// Final standings for the results screen — the host's path. Players read the
+// same endpoint from the browser (fetchPlayerResults in lib/player-session.ts).
+// Deliberately not getLeaderboard:
 // that reads GET /rooms/:id, whose player response omits the roster, so a
 // player's results screen came back empty. /rooms/:id/results serves scores to
 // the host and to any player of the room, and flags the caller's own row —
@@ -112,27 +115,7 @@ export async function getLeaderboard(sessionId: string, playerToken?: string) {
 // cannot identify itself by id.
 export async function getRoomResults(sessionId: string, playerToken?: string) {
   const extra = playerToken ? { 'X-Player-Token': playerToken } : undefined
-  const data = await apiRequest(`/rooms/${sessionId}/results`, 'GET', undefined, extra)
-  const players = data.players || []
-
-  return {
-    status: String(data.status || ''),
-    // Why the game ended: '' (normal), license_expired, license_revoked. The
-    // websocket payload is gone by the time this page renders, so the API field
-    // is the source of truth on a reload.
-    endedReason: String(data.ended_reason || ''),
-    // The host's branding, so the results screen matches the room everyone
-    // just played in rather than dropping back to the stock gradient.
-    themeConfig: String(data.theme_config || ''),
-    players: players.map((p: any) => ({
-      id: String(p.id),
-      username: p.nickname,
-      totalPoints: p.score,
-      correctAnswers: p.correct_answers || 0,
-      rank: p.rank,
-      isYou: !!p.you,
-    })),
-  }
+  return mapRoomResults(await apiRequest(`/rooms/${sessionId}/results`, 'GET', undefined, extra))
 }
 
 // Update game session state via REST endpoints

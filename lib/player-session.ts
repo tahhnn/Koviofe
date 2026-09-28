@@ -14,11 +14,17 @@
  * whose room does not match the URL. The player branch of GET /rooms/:id never
  * returned the roster, pin or host id, so nothing new is exposed.
  *
- * Both functions throw on failure, as the server actions they replace did, so
+ * The results screen joined them on 2026-09-25: every player lands on it in the
+ * same second the game ends, and through the server action Node re-parsed and
+ * re-serialized the full roster (~140KB at 1500 players) per player — measured
+ * p95 16s for the action alone. GET /rooms/:id/results already accepted the
+ * player token and flags the caller's own row, so nothing new is exposed.
+ *
+ * All of them throw on failure, as the server actions they replace did, so
  * the call sites keep their existing catch blocks.
  */
 
-import { mapGameSession, mapStandings } from '@/lib/game-session'
+import { mapGameSession, mapRoomResults, mapStandings } from '@/lib/game-session'
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '')
 
@@ -54,4 +60,8 @@ export async function fetchPlayerSession(sessionId: string, playerToken?: string
 
 export async function fetchPlayerStandings(sessionId: string, playerToken?: string) {
   return mapStandings(await playerGet(`/rooms/${sessionId}/standings`, playerToken))
+}
+
+export async function fetchPlayerResults(sessionId: string, playerToken: string) {
+  return mapRoomResults(await playerGet(`/rooms/${sessionId}/results`, playerToken))
 }

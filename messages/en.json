@@ -342,6 +342,8 @@
     "invite": "Invite",
     "inviteHint": "Scan to join, or copy the link for your group chat.",
     "preparingQr": "Preparing QR…",
+    "enlargeQr": "Click to enlarge QR code",
+    "closeQr": "Close QR code",
     "soloMode": "Solo Arena Mode Active",
     "liveScoreboard": "Live Arena Scoreboard",
     "loadingQuestion": "Loading question…",

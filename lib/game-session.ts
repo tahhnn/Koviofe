@@ -1,5 +1,5 @@
 /**
- * Response shaping for GET /rooms/:id and GET /rooms/:id/standings.
+ * Response shaping for GET /rooms/:id, /rooms/:id/standings and /rooms/:id/results.
  *
  * Kept apart from the callers because there are two of them: the host page
  * still reads through server actions (its credential is the httpOnly `token`
@@ -71,3 +71,28 @@ export function mapStandings(data: any) {
 }
 
 export type Standings = ReturnType<typeof mapStandings>
+
+/** Final standings for the results screen (GET /rooms/:id/results). */
+export function mapRoomResults(data: any) {
+  const players = data?.players || []
+  return {
+    status: String(data?.status || ''),
+    // Why the game ended: '' (normal), license_expired, license_revoked. The
+    // websocket payload is gone by the time this page renders, so the API field
+    // is the source of truth on a reload.
+    endedReason: String(data?.ended_reason || ''),
+    // The host's branding, so the results screen matches the room everyone
+    // just played in rather than dropping back to the stock gradient.
+    themeConfig: String(data?.theme_config || ''),
+    players: players.map((p: any) => ({
+      id: String(p.id),
+      username: p.nickname,
+      totalPoints: p.score,
+      correctAnswers: p.correct_answers || 0,
+      rank: p.rank,
+      isYou: !!p.you,
+    })),
+  }
+}
+
+export type RoomResults = ReturnType<typeof mapRoomResults>

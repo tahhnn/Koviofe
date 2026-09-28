@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { Button } from '@/components/ui/button'
 import { QRCodeComponent } from '@/components/qr-code'
-import { Users, Maximize2, Minimize2, Link2, Check, Lock, Globe } from 'lucide-react'
+import { Users, Maximize2, Minimize2, Link2, Check, Lock, Globe, X } from 'lucide-react'
 
 interface Participant {
   id: string
@@ -94,6 +94,18 @@ export function HostLobby({
     document.addEventListener('fullscreenchange', sync)
     return () => document.removeEventListener('fullscreenchange', sync)
   }, [])
+
+  // The banner QR is sized for the front rows. Clicking it blows it up over the
+  // whole screen so a phone at the back of the hall can still lock onto it.
+  const [qrExpanded, setQrExpanded] = useState(false)
+  useEffect(() => {
+    if (!qrExpanded) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setQrExpanded(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [qrExpanded])
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
@@ -197,7 +209,15 @@ export function HostLobby({
             {/* Keep QRCodeComponent's white card and padding: that quiet zone is
                 what lets a phone camera lock onto the code from a distance. */}
             {joinUrl ? (
-              <QRCodeComponent value={joinUrl} size={260} className="rounded-lg w-full !p-1 sm:!p-1.5" />
+              <button
+                type="button"
+                onClick={() => setQrExpanded(true)}
+                aria-label={t('enlargeQr')}
+                title={t('enlargeQr')}
+                className="w-full rounded-lg cursor-zoom-in transition-transform hover:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e85d4c]"
+              >
+                <QRCodeComponent value={joinUrl} size={260} className="rounded-lg w-full !p-1 sm:!p-1.5" />
+              </button>
             ) : (
               <div className="aspect-square w-full flex items-center justify-center text-[10px] leading-tight text-[#12141a]/50 text-center">
                 {t('preparingQr')}
@@ -315,6 +335,47 @@ export function HostLobby({
           {starting ? t('starting') : t('startGame')}
         </Button>
       </div>
+
+      {qrExpanded && joinUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('enlargeQr')}
+          onClick={() => setQrExpanded(false)}
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-[2vh] bg-[#12141a]/90 backdrop-blur-sm p-4 cursor-zoom-out"
+        >
+          <button
+            type="button"
+            onClick={() => setQrExpanded(false)}
+            aria-label={t('closeQr')}
+            title={t('closeQr')}
+            className="absolute top-3 right-3 sm:top-5 sm:right-5 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[#12141a]/70 text-[#9a9eab] hover:text-[#f2f0eb]"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          {/* min(vw, vh) keeps the code square and fully on screen on any
+              projector aspect ratio, leaving room for the PIN underneath. */}
+          <div className="[&_img]:[image-rendering:pixelated]" style={{ width: 'min(88vw, 72vh)' }}>
+            <QRCodeComponent value={joinUrl} size={2000} className="rounded-2xl w-full" />
+          </div>
+          <div className="text-center text-[#f2f0eb]">
+            <p
+              className="font-bold tracking-tight break-all leading-tight"
+              style={{ fontSize: 'clamp(1rem, min(2.4vw, 3.4vh), 2.4rem)' }}
+            >
+              {joinHost}
+            </p>
+            {sessionCode && (
+              <p
+                className="font-mono font-black text-[#e85d4c] tabular-nums leading-none tracking-[0.04em] mt-1"
+                style={{ fontSize: 'clamp(1.75rem, min(5vw, 8vh), 5rem)' }}
+              >
+                {groupPin(String(sessionCode))}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
