@@ -300,7 +300,6 @@
     "yourDevice": "Your device",
     "scanTitle": "Scan to install",
     "scanHint": "Open the camera on your phone and scan the code to get the {platform} build.",
-    "updatedOn": "Updated {date}",
     "emptyTitle": "No build available yet",
     "emptyHint": "The app has not been uploaded to the server. Once an administrator publishes an installer, the download button appears here.",
     "platform": {
@@ -310,28 +309,12 @@
       "ios": "iOS",
       "other": "Other platforms"
     },
-    "kind": {
-      "installer": "Installer",
-      "diskImage": "Disk image (.dmg)",
-      "portable": "Portable, no install needed",
-      "portableArchive": "Portable, zip archive",
-      "archive": "Zip archive"
-    },
-    "arch": {
-      "x64": "64-bit (x64)",
-      "arm64": "ARM64",
-      "x86": "32-bit (x86)"
-    },
     "mac": {
-      "x64": "Intel Mac",
-      "arm64": "arm64",
+      "x64": "Intel chip",
+      "arm64": "Apple M1/M2/M3… chip",
       "x86": "32-bit"
     },
-    "installHint": {
-      "windows": "Windows may show a SmartScreen warning because the app is not code-signed: click “More info”, then “Run anyway”. The installer adds a desktop shortcut; the portable build runs straight from the file.",
-      "macos": "Pick the right chip: M1/M2/M3 Macs need the Apple Silicon build, older Macs the Intel one. If macOS refuses to open it because the developer cannot be verified, go to System Settings › Privacy & Security and click “Open Anyway”.",
-      "android": "Open the file once it finishes downloading and allow installs from this source when prompted."
-    }
+    "buildFor": "For {platform}"
   },
   "host": {
     "loading": "Loading room…",

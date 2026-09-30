@@ -301,7 +301,6 @@
     "yourDevice": "Máy của bạn",
     "scanTitle": "Quét để tải",
     "scanHint": "Mở camera trên điện thoại và quét mã để tải bản {platform}.",
-    "updatedOn": "Cập nhật {date}",
     "emptyTitle": "Chưa có bản cài đặt nào",
     "emptyHint": "Ứng dụng chưa được tải lên máy chủ. Khi quản trị viên đưa file cài đặt lên, nút tải sẽ xuất hiện ở đây.",
     "platform": {
@@ -311,28 +310,12 @@
       "ios": "iOS",
       "other": "Nền tảng khác"
     },
-    "kind": {
-      "installer": "Bản cài đặt",
-      "diskImage": "Ảnh đĩa (.dmg)",
-      "portable": "Bản chạy ngay, không cần cài",
-      "portableArchive": "Bản chạy ngay (gói .zip)",
-      "archive": "Gói nén (.zip)"
-    },
-    "arch": {
-      "x64": "64-bit (x64)",
-      "arm64": "ARM64",
-      "x86": "32-bit (x86)"
-    },
     "mac": {
-      "x64": "Máy Intel",
-      "arm64": "arm64",
+      "x64": "chip Intel",
+      "arm64": "chip Apple M1/M2/M3…",
       "x86": "32-bit"
     },
-    "installHint": {
-      "windows": "Windows có thể hiện cảnh báo SmartScreen vì app chưa mua chứng chỉ ký số: bấm “More info” rồi “Run anyway”. Bản cài đặt tạo lối tắt ngoài desktop, bản chạy ngay thì mở file là dùng được.",
-      "macos": "Chọn đúng loại chip: máy M1/M2/M3 tải bản Apple Silicon, máy cũ hơn tải bản Intel. Nếu macOS báo không mở được vì chưa xác minh nhà phát triển, vào Cài đặt hệ thống › Quyền riêng tư & Bảo mật rồi bấm “Vẫn mở”.",
-      "android": "Sau khi tải xong hãy mở file và cho phép cài đặt từ nguồn này khi máy hỏi."
-    }
+    "buildFor": "Bản cho {platform}"
   },
   "host": {
     "loading": "Đang tải phòng…",

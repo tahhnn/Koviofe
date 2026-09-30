@@ -1,14 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useFormatter, useTranslations } from 'next-intl'
+import { useTranslations } from 'next-intl'
 import {
   Apple,
   Download,
   ExternalLink,
   Gift,
   Hourglass,
-  Info,
   MonitorDown,
   Package,
   QrCode,
@@ -68,7 +67,6 @@ function detectPlatform(): LuckyDrawPlatform | null {
  */
 export function LuckyDrawPanel() {
   const t = useTranslations('luckyDraw')
-  const format = useFormatter()
   const [release, setRelease] = useState<LuckyDrawRelease | null>(null)
   const [loading, setLoading] = useState(true)
   const [viewerPlatform, setViewerPlatform] = useState<LuckyDrawPlatform | null>(null)
@@ -137,15 +135,12 @@ export function LuckyDrawPanel() {
   const mobileBuild = release.builds.find((b) => b.platform === 'android' || b.platform === 'ios')
   const qrValue = mobileBuild && origin ? `${origin}${mobileBuild.url}` : ''
 
+  // Just enough for a visitor to pick the right file: which OS, and for a Mac
+  // which chip — the two .dmg builds are otherwise indistinguishable.
   const buildLabel = (build: LuckyDrawBuild): string => {
     if (build.label) return build.label
-    const parts = [t(`kind.${build.kind}`)]
-    if (build.arch) {
-      // "Intel" and "Apple Silicon" are what a Mac owner recognises; x64 and
-      // arm64 mean nothing to them and everything to a Windows owner.
-      parts.push(build.platform === 'macos' ? t(`mac.${build.arch}`) : t(`arch.${build.arch}`))
-    }
-    return parts.join(' · ')
+    const name = t('buildFor', { platform: t(`platform.${build.platform}`) })
+    return build.platform === 'macos' && build.arch ? `${name} (${t(`mac.${build.arch}`)})` : name
   }
 
   return (
@@ -210,15 +205,7 @@ export function LuckyDrawPanel() {
                     </div>
                     <div className="min-w-0 space-y-1">
                       <p className="text-sm font-bold text-white truncate">{buildLabel(build)}</p>
-                      <p className="text-[11px] text-gray-500 truncate">
-                        {build.fileName} · {formatSize(build.sizeBytes)} ·{' '}
-                        {t('updatedOn', {
-                          date: format.dateTime(new Date(build.updatedAt), { dateStyle: 'short' }),
-                        })}
-                      </p>
-                      {build.notes && (
-                        <p className="text-[11px] text-gray-400 leading-relaxed">{build.notes}</p>
-                      )}
+                      <p className="text-[11px] text-gray-500 truncate">{formatSize(build.sizeBytes)}</p>
                     </div>
                   </div>
 
@@ -238,14 +225,6 @@ export function LuckyDrawPanel() {
                 </div>
               ))}
 
-              {/* Each OS blocks an unsigned app its own way, so the hint sits
-                  with the builds it applies to rather than in one footnote. */}
-              {(platform === 'windows' || platform === 'macos' || platform === 'android') && (
-                <div className="bg-black/20 border border-white/5 rounded-2xl p-4 flex gap-3">
-                  <Info className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-gray-400 leading-relaxed">{t(`installHint.${platform}`)}</p>
-                </div>
-              )}
             </div>
           )
         })}
