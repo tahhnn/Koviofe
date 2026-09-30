@@ -1537,7 +1537,7 @@ export default function PlayerGameScreen() {
                 size="lg"
                 className="w-full h-12 bg-[#f2f0eb] text-[#12141a] hover:bg-white font-semibold rounded-xl disabled:opacity-100 disabled:bg-[#2c313d] disabled:text-[#5c6170]"
               >
-                {isPoll ? 'Vote' : 'Submit'}
+                {isPoll ? t('vote') : t('submit')}
                 <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             </div>
@@ -1595,11 +1595,17 @@ export default function PlayerGameScreen() {
                     {feedback.isCorrect ? t('correct') : t('notThisTime')}
                   </p>
                   <p className="text-sm text-[#9a9eab] mt-1">
-                    +{feedback.pointsEarned} points
+                    {t('pointsEarned', { points: feedback.pointsEarned })}
                   </p>
                   {correctAnswer && !feedback.isCorrect && !isPinAnswer && !isPoll && (
                     <p className="text-sm text-[#f2f0eb] mt-2">
-                      {t('correctAnswer')} <strong className="text-[#2dd4bf]">{correctAnswer}</strong>
+                      {/* correctAnswer is the option id for choice questions; show its text.
+                          Typed answers have no matching option and are already text. */}
+                      {t('correctAnswer')} <strong className="text-[#2dd4bf]">{
+                        (currentQuestion.options || []).find(
+                          o => String(o.id).toLowerCase() === correctAnswer.toLowerCase()
+                        )?.optionText || correctAnswer
+                      }</strong>
                     </p>
                   )}
                 </div>

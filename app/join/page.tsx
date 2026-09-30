@@ -194,7 +194,7 @@ function JoinForm() {
           className="w-full h-12 bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] font-semibold rounded-xl disabled:opacity-40"
         >
           {loading ? (
-            'Joining…'
+            t('joining')
           ) : (
             <span className="inline-flex items-center gap-2">
               {t('joinRoom')}
@@ -204,7 +204,7 @@ function JoinForm() {
         </Button>
 
         <p className="text-center text-sm text-[#9a9eab] pt-1">
-          Hosting instead?{' '}
+          {t('hostingInstead')}{' '}
           <Link href="/sign-in" className="text-[#e85d4c] font-medium hover:underline inline-flex min-h-11 items-center px-3">
             {t('signIn')}
           </Link>
