@@ -54,7 +54,9 @@
     "guide": "Hướng dẫn",
     "gameInProgress": "Trò chơi đã bắt đầu — không thể vào thêm",
     "pinAndNicknameRequired": "Nhập cả mã PIN và biệt danh",
-    "roomNotAccepting": "Phòng này hiện không nhận thêm người chơi"
+    "roomNotAccepting": "Phòng này hiện không nhận thêm người chơi",
+    "playerCount": "{count} / {max} người chơi",
+    "playerCountFull": "{count} / {max} người chơi - phòng đã đầy"
   },
   "auth": {
     "nameLabel": "Tên",

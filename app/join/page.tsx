@@ -174,8 +174,10 @@ function JoinForm() {
 
         {roomStatus === 'waiting' && maxPlayers != null && (
           <p className="text-sm text-[#2dd4bf]">
-            {playerCount ?? 0} / {maxPlayers} players
-            {(playerCount ?? 0) >= maxPlayers ? ' - room full' : ''}
+            {t((playerCount ?? 0) >= maxPlayers ? 'playerCountFull' : 'playerCount', {
+              count: playerCount ?? 0,
+              max: maxPlayers,
+            })}
           </p>
         )}
 

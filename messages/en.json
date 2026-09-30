@@ -54,7 +54,9 @@
     "guide": "Guide",
     "gameInProgress": "Game already in progress — joining is closed",
     "pinAndNicknameRequired": "Enter both a PIN and a nickname",
-    "roomNotAccepting": "This room is not accepting new players"
+    "roomNotAccepting": "This room is not accepting new players",
+    "playerCount": "{count} / {max} players",
+    "playerCountFull": "{count} / {max} players - room full"
   },
   "auth": {
     "nameLabel": "Name",
