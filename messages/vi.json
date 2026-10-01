@@ -105,7 +105,21 @@
     "endedEarlyHostExpired": "Trận đấu bị kết thúc sớm vì gói của bạn đã hết hạn. Gia hạn rồi tạo phòng mới nhé.",
     "endedEarlyHostRevoked": "Trận đấu bị kết thúc sớm vì quản trị viên đã thu hồi gói của tài khoản này.",
     "liveTitle": "Bảng xếp hạng đang cập nhật",
-    "liveHint": "Vẫn còn người đang chơi — thứ hạng sẽ thay đổi cho tới khi cả phòng kết thúc."
+    "liveHint": "Vẫn còn người đang chơi — thứ hạng sẽ thay đổi cho tới khi cả phòng kết thúc.",
+    "questionStats": {
+      "tab": "Tỉ lệ đúng",
+      "questionLabel": "Câu {n}",
+      "correctAnswer": "Đáp án đúng",
+      "answerTrue": "Đúng",
+      "answerFalse": "Sai",
+      "answerPin": "Vị trí đánh dấu trên ảnh",
+      "pollNote": "Câu bình chọn — không tính đúng sai",
+      "pollCount": "{answered}/{total} người đã bình chọn",
+      "correctOfTotal": "{correct}/{total} người trả lời đúng",
+      "noAnswer": "{count} người không trả lời",
+      "empty": "Phòng này chưa có thống kê từng câu.",
+      "pending": "Thống kê từng câu sẽ có khi cả phòng kết thúc."
+    }
   },
   "admin": {
     "checking": "Đang kiểm tra quyền quản trị…",

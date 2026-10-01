@@ -92,7 +92,31 @@ export function mapRoomResults(data: any) {
       rank: p.rank,
       isYou: !!p.you,
     })),
+    // How the room did on each question. Captured when the room is finalized
+    // (the answer log is deleted right after), so a room still running and a
+    // room archived before this existed both come back empty.
+    questionStats: ((data?.question_stats || []) as any[]).map((q: any): QuestionStat => ({
+      order: Number(q.order) || 0,
+      content: String(q.content || ''),
+      type: String(q.type || ''),
+      correctAnswer: String(q.correct_answer || ''),
+      correctText: String(q.correct_text || ''),
+      answered: Number(q.answered) || 0,
+      correct: Number(q.correct) || 0,
+      totalPlayers: Number(q.total_players) || 0,
+    })),
   }
+}
+
+export type QuestionStat = {
+  order: number
+  content: string
+  type: string
+  correctAnswer: string
+  correctText: string
+  answered: number
+  correct: number
+  totalPlayers: number
 }
 
 export type RoomResults = ReturnType<typeof mapRoomResults>
