@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslations } from 'next-intl'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { XCircle, MapPin, Lightbulb, Trophy } from 'lucide-react'
 import { useWebSocket } from '@/hooks/use-websocket'
+import { useHostHotkeys } from '@/hooks/use-host-hotkeys'
 import { QRCodeComponent } from '@/components/qr-code'
 import {
   getGameSession,
@@ -54,6 +55,15 @@ interface Question {
   explanation?: string
 }
 
+/** Keycap shown on a host control. Desktop only: a tablet host has no keys. */
+function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="hidden lg:inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-md border border-current/30 bg-black/20 font-mono text-[11px] font-bold leading-none opacity-70">
+      {children}
+    </kbd>
+  )
+}
+
 const parseQuestionContent = (contentStr: string) => {
   try {
     const parsed = JSON.parse(contentStr)
@@ -94,6 +104,7 @@ export default function HostGameScreen() {
   // and after the explanation slide when the question has one — and the room
   // sees it on the projector at the same moment every phone does.
   const [showBoard, setShowBoard] = useState(false)
+  const [showHotkeys, setShowHotkeys] = useState(false)
   // The host view of GET /rooms/:id carries the slide with the question, so no
   // extra round trip is needed to know whether there is one to offer.
   const explanationDoc: ExplanationDoc | null = parseExplanation(currentQuestion?.explanation)
@@ -600,6 +611,53 @@ export default function HostGameScreen() {
     toast.confirm(t('confirmEndTitle'), () => { void endGameNow() }, t('confirmEndBody'))
   }
 
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {})
+    } else {
+      document.documentElement.requestFullscreen?.().catch(() => {})
+    }
+  }
+
+  const atLastQuestion = () => (gameState?.currentQuestionIndex || 0) + 1 >= totalQuestions
+
+  /** One key walks the whole question: reveal → board → next (or end). The
+   *  explanation slide raises itself after the reveal, so it is not a step. */
+  const primaryAction = () => {
+    if (!showAnswers) {
+      if (currentQuestion) void handleRevealAnswer()
+    } else if (!showBoard) {
+      void handleShowLeaderboard()
+    } else if (atLastQuestion()) {
+      handleEndGame()
+    } else {
+      void handleNextQuestion()
+    }
+  }
+
+  const classicKeys: Record<string, () => void> = isPlayerPaced
+    ? {}
+    : {
+        ' ': primaryAction,
+        Enter: primaryAction,
+        ArrowRight: primaryAction,
+        PageDown: primaryAction,
+        r: () => { if (!showAnswers && currentQuestion) void handleRevealAnswer() },
+        l: () => { if (showAnswers && !showBoard) void handleShowLeaderboard() },
+        n: () => { if (showBoard && !atLastQuestion()) void handleNextQuestion() },
+      }
+
+  useHostHotkeys(
+    {
+      ...classicKeys,
+      e: handleEndGame,
+      f: toggleFullscreen,
+      '?': () => setShowHotkeys(v => !v),
+      Escape: () => setShowHotkeys(false),
+    },
+    gameStarted && !accessError && startCountdown === null,
+  )
+
   if (loading) {
     return (
       <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="host">
@@ -743,6 +801,7 @@ export default function HostGameScreen() {
         >
           <XCircle className="w-4 h-4" />
           <span className="hidden sm:inline">{t('endQuickly')}</span>
+          <Kbd>E</Kbd>
         </Button>
         <Button
           onClick={handleShowLeaderboard}
@@ -751,6 +810,7 @@ export default function HostGameScreen() {
           className="flex-1 bg-[#e85d4c] hover:bg-[#d44e3e] disabled:bg-white/10 disabled:text-gray-500 text-white font-black h-12 sm:h-14 text-base sm:text-lg rounded-xl sm:rounded-2xl shadow-[0_10px_20px_-10px_rgba(232,93,76,0.5)] transition-all duration-300 cursor-pointer"
         >
           {actionLoading ? 'Moving Arena...' : t('showLeaderboard')}
+          <Kbd>Space</Kbd>
         </Button>
       </div>
     </div>
@@ -784,10 +844,11 @@ export default function HostGameScreen() {
         )}
       </div>
 
-      <div className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 md:p-6">
-        <div className="w-full aspect-video max-w-[calc((100vh-11rem)*16/9)] rounded-2xl sm:rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
-          <LeaderboardSlide rows={boardRows} total={(leaderboard || []).length} variant="stage" />
-        </div>
+      {/* Full width and height, not the 16:9 card the explanation uses: a
+          capped card left a 16:10 laptop with small names in the middle of a
+          mostly empty screen. */}
+      <div className="flex-1 min-h-0 px-3 py-3 sm:px-6 sm:py-4 lg:px-10 lg:py-5">
+        <LeaderboardSlide rows={boardRows} total={(leaderboard || []).length} variant="stage" fill />
       </div>
 
       <div className="shrink-0 border-t border-white/10 bg-[#12141a] px-3 sm:px-6 py-3 sm:py-4 flex items-center gap-3">
@@ -799,6 +860,7 @@ export default function HostGameScreen() {
         >
           <XCircle className="w-4 h-4" />
           <span className="hidden sm:inline">{t('endQuickly')}</span>
+          <Kbd>E</Kbd>
         </Button>
         <Button
           onClick={isLastQuestion ? handleEndGame : handleNextQuestion}
@@ -809,16 +871,68 @@ export default function HostGameScreen() {
           {actionLoading
             ? 'Moving Arena...'
             : (isLastQuestion ? t('endBattle') : t('nextBattleQuestion'))}
+          <Kbd>Space</Kbd>
         </Button>
       </div>
     </div>
   ) : null
+
+  const hotkeyRows: [string, string][] = [
+    ...(isPlayerPaced
+      ? []
+      : ([
+          ['Space / → / Enter', t('hotkeyNext')],
+          ['R', t('hotkeyReveal')],
+          ['L', t('hotkeyLeaderboard')],
+          ['N', t('hotkeyNextQuestion')],
+        ] as [string, string][])),
+    ['E', t('hotkeyEnd')],
+    ['F', t('hotkeyFullscreen')],
+    ['?', t('hotkeyHelp')],
+  ]
+
+  const hotkeysOverlay = (
+    <>
+      <button
+        type="button"
+        onClick={() => setShowHotkeys(v => !v)}
+        className="hidden lg:inline-flex fixed top-3 left-1/2 -translate-x-1/2 z-[61] items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-3 py-1 text-[11px] font-semibold text-[#9a9eab] hover:text-[#f2f0eb] cursor-pointer"
+      >
+        <kbd className="font-mono font-bold">?</kbd> {t('hotkeysTitle')}
+      </button>
+      {showHotkeys && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setShowHotkeys(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1a1d26] p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-black text-[#f2f0eb] mb-4">{t('hotkeysTitle')}</h2>
+            <ul className="space-y-2.5">
+              {hotkeyRows.map(([keys, label]) => (
+                <li key={keys} className="flex items-center justify-between gap-4 text-sm">
+                  <span className="text-[#c9ccd4]">{label}</span>
+                  <kbd className="shrink-0 rounded-md border border-white/15 bg-black/40 px-2 py-1 font-mono text-xs font-bold text-[#f2f0eb]">
+                    {keys}
+                  </kbd>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 text-xs text-[#9a9eab]">{t('hotkeyConfirmHint')}</p>
+          </div>
+        </div>
+      )}
+    </>
+  )
 
   return (
     <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="host">
       {countdownOverlay}
       {explanationStage}
       {leaderboardStage}
+      {hotkeysOverlay}
       {/* Vertically centred. With the leaderboard sidebar gone the question is
           the only thing on the screen, and pinning it to the top left the lower
           half of a projector empty. */}
@@ -1244,6 +1358,7 @@ export default function HostGameScreen() {
                               className="w-full bg-white text-black hover:bg-white/90 disabled:bg-white/10 disabled:text-gray-500 h-14 text-lg font-black rounded-2xl shadow-[0_4px_20px_rgba(255,255,255,0.08)] hover:shadow-[0_4px_25px_rgba(255,255,255,0.15)] transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer border-none"
                             >
                               {currentQuestion.type === 'poll' ? t('showPollResults') : t('reveal')}
+                              <Kbd>Space</Kbd>
                             </Button>
                           ) : (
                             <>
@@ -1257,6 +1372,7 @@ export default function HostGameScreen() {
                               className="w-full bg-[#e85d4c] hover:bg-[#d44e3e] disabled:from-purple-600/20 disabled:to-indigo-600/20 text-white font-black h-14 whitespace-normal leading-tight text-base sm:text-lg rounded-2xl shadow-[0_10px_20px_-10px_rgba(168,85,247,0.5)] transform hover:-translate-y-0.5 transition-all duration-300 cursor-pointer"
                             >
                               {actionLoading ? 'Moving Arena...' : t('showLeaderboard')}
+                              <Kbd>Space</Kbd>
                             </Button>
                             </>
                           )}
@@ -1268,6 +1384,7 @@ export default function HostGameScreen() {
                           >
                             <XCircle className="w-4 h-4" />
                             {t('endQuickly')}
+                            <Kbd>E</Kbd>
                           </Button>
                         </div>
                       </>

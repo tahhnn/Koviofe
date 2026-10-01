@@ -399,7 +399,16 @@
     "planCapacity": "Your plan allows up to {count} players",
     "explanationStageLabel": "Explanation",
     "showLeaderboard": "Leaderboard",
-    "leaderboardStageLabel": "Leaderboard"
+    "leaderboardStageLabel": "Leaderboard",
+    "hotkeysTitle": "Shortcuts",
+    "hotkeyNext": "Next step (answer → leaderboard → next question)",
+    "hotkeyReveal": "Reveal answer",
+    "hotkeyLeaderboard": "Show leaderboard",
+    "hotkeyNextQuestion": "Next question",
+    "hotkeyEnd": "End game",
+    "hotkeyFullscreen": "Toggle fullscreen",
+    "hotkeyHelp": "Toggle this shortcut list",
+    "hotkeyConfirmHint": "When a confirmation appears: Enter to confirm, Esc to cancel."
   },
   "media": {
     "addMedia": "Add media",

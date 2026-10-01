@@ -400,7 +400,16 @@
     "planCapacity": "Gói của bạn cho tối đa {count} người chơi",
     "explanationStageLabel": "Giải thích",
     "showLeaderboard": "Bảng xếp hạng",
-    "leaderboardStageLabel": "Bảng xếp hạng"
+    "leaderboardStageLabel": "Bảng xếp hạng",
+    "hotkeysTitle": "Phím tắt",
+    "hotkeyNext": "Bước tiếp theo (đáp án → bảng xếp hạng → câu tiếp)",
+    "hotkeyReveal": "Hiện đáp án",
+    "hotkeyLeaderboard": "Xem bảng xếp hạng",
+    "hotkeyNextQuestion": "Câu tiếp theo",
+    "hotkeyEnd": "Kết thúc game",
+    "hotkeyFullscreen": "Bật/tắt toàn màn hình",
+    "hotkeyHelp": "Bật/tắt bảng phím tắt",
+    "hotkeyConfirmHint": "Khi hộp xác nhận hiện ra: Enter để đồng ý, Esc để huỷ."
   },
   "media": {
     "addMedia": "Thêm ảnh",

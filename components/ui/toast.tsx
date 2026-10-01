@@ -172,6 +172,22 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
     return () => clearTimeout(timer)
   }, [toast, onClose, hasActions])
 
+  // A confirm is answered from the keyboard too: the host ending a game from a
+  // hotkey should not have to reach for the mouse to finish the sentence.
+  // Capture phase on window, so it runs before page-level shortcuts.
+  useEffect(() => {
+    if (toast.type !== 'confirm') return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' && e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      if (e.key === 'Enter') toast.onConfirm?.()
+      onClose()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [toast, onClose])
+
   let bgClass = 'bg-slate-900/90 border-slate-700/50 text-slate-100'
   let progressColor = 'bg-indigo-500'
   let icon = '⚔️'
@@ -195,7 +211,9 @@ function ToastCard({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   }
 
   return (
-    <div className={`pointer-events-auto flex flex-col border backdrop-blur-xl rounded-2xl p-4 shadow-2xl transition-all duration-300 transform translate-y-0 animate-toast-in ${bgClass}`}>
+    <div
+      data-toast-confirm={toast.type === 'confirm' ? '' : undefined}
+      className={`pointer-events-auto flex flex-col border backdrop-blur-xl rounded-2xl p-4 shadow-2xl transition-all duration-300 transform translate-y-0 animate-toast-in ${bgClass}`}>
       <div className="flex gap-3">
         <span className="text-xl flex-shrink-0">{icon}</span>
         <div className="flex-1 space-y-1">
