@@ -647,14 +647,26 @@ export default function HostGameScreen() {
         n: () => { if (showBoard && !atLastQuestion()) void handleNextQuestion() },
       }
 
+  const closeKeys: Record<string, () => void> = {
+    '?': () => setShowHotkeys(v => !v),
+    Escape: () => setShowHotkeys(false),
+  }
+
+  // While the shortcut list is open it covers the controls, so a key pressed
+  // to read it must not advance the game underneath; only closing it works.
+  // Space/Enter are swallowed rather than left unbound: unbound, they would
+  // still click whichever control the mouse last focused under the overlay.
+  const swallow = () => {}
+
   useHostHotkeys(
-    {
-      ...classicKeys,
-      e: handleEndGame,
-      f: toggleFullscreen,
-      '?': () => setShowHotkeys(v => !v),
-      Escape: () => setShowHotkeys(false),
-    },
+    showHotkeys
+      ? { ' ': swallow, Enter: swallow, ...closeKeys }
+      : {
+          ...classicKeys,
+          e: handleEndGame,
+          f: toggleFullscreen,
+          ...closeKeys,
+        },
     gameStarted && !accessError && startCountdown === null,
   )
 
