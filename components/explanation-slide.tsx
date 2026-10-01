@@ -261,7 +261,7 @@ export function ExplanationSlide({
   // it that has grown a scrollbar and pushed the layout out of proportion.
   const textStack = (box = '') => (
     <div className={`min-w-0 overflow-y-auto ${box}`}>
-      <div className="min-h-full flex flex-col justify-center gap-3 sm:gap-4">
+      <div className={`min-h-full flex flex-col justify-center ${fixed ? 'gap-4' : 'gap-3 sm:gap-4'}`}>
         {title && <TextBlock el={title} animate={animate} delayMs={0} fixed={fixed} />}
         {body && <TextBlock el={body} animate={animate} delayMs={70} fixed={fixed} />}
       </div>
@@ -288,7 +288,7 @@ export function ExplanationSlide({
 
     case 'image_top':
       inner = (
-        <div className={`h-full flex flex-col gap-4 sm:gap-6 ${pad}`}>
+        <div className={`h-full flex flex-col ${fixed ? 'gap-6' : 'gap-4 sm:gap-6'} ${pad}`}>
           {media && (
             <ImageBlock
               el={media}
@@ -307,16 +307,26 @@ export function ExplanationSlide({
     case 'image_left':
     case 'image_right': {
       // Side-by-side collapses to a single column on a phone; the image keeps
-      // the reading order it has on the desktop layout.
-      const dir = doc.layout === 'image_left' ? 'sm:flex-row' : 'sm:flex-row-reverse'
+      // the reading order it has on the desktop layout. A fixed (scaled)
+      // slide is always composed at stage size, so it must not ask the window:
+      // on a phone the column layout left a 160px image in a ~200px slide and
+      // squeezed the text column to zero height.
+      const left = doc.layout === 'image_left'
+      const dir = fixed
+        ? (left ? 'flex-row' : 'flex-row-reverse')
+        : (left ? 'flex-col sm:flex-row' : 'flex-col sm:flex-row-reverse')
+      const gap = fixed ? 'gap-8' : 'gap-4 sm:gap-6 lg:gap-8'
+      const imgSize = fixed
+        ? 'w-1/2 h-auto'
+        : `w-full sm:w-1/2 sm:h-auto ${isSheet ? 'h-[38%] min-h-32' : 'h-40'}`
       inner = (
-        <div className={`h-full flex flex-col ${dir} gap-4 sm:gap-6 lg:gap-8 ${pad}`}>
+        <div className={`h-full flex ${dir} ${gap} ${pad}`}>
           {media && (
             <ImageBlock
               el={media}
               animate={animate}
               delayMs={30}
-              className={`shrink-0 w-full sm:w-1/2 sm:h-auto ${isSheet ? 'h-[38%] min-h-32' : 'h-40'}`}
+              className={`shrink-0 ${imgSize}`}
             />
           )}
           {textStack('flex-1 min-h-0 min-w-0')}
