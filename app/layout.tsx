@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Lexend } from 'next/font/google'
 import { NextIntlClientProvider } from 'next-intl'
@@ -54,7 +53,6 @@ export default async function RootLayout({
             {children}
           </ToastProvider>
         </NextIntlClientProvider>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )

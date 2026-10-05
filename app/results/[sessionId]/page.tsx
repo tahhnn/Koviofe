@@ -5,8 +5,9 @@ import { useTranslations } from 'next-intl'
 import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { getRoomResults } from '@/app/actions/game'
-import { GameBackground } from '@/components/game-background'
+import { getRoomResultsForPage } from '@/app/actions/game'
+import { fetchPlayerResults } from '@/lib/player-session'
+import { ThemedGameBackground } from '@/components/game-background'
 import { BrandMark } from '@/components/brand-mark'
 import { XCircle } from 'lucide-react'
 
@@ -33,7 +34,10 @@ export default function ResultsPage() {
   const [userRank, setUserRank] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  // Neither a player token in this tab nor a host session: no retry can help.
+  const [notAllowed, setNotAllowed] = useState(false)
   const [isPlayer, setIsPlayer] = useState(false)
+  const [themeConfig, setThemeConfig] = useState('')
   // Seeded from the URL the redirect carried, then replaced by the API's value
   // — which is what survives a reload, when the websocket push is long gone.
   const [endedReason, setEndedReason] = useState(searchParams.get('reason') || '')
@@ -56,7 +60,24 @@ export default function ResultsPage() {
       const playerToken = sessionStorage.getItem(`player_token_${sessionId}`)
       setIsPlayer(!!playerToken)
 
-      const { players, endedReason: reason, status } = await getRoomResults(sessionId, playerToken || undefined)
+      // Players read straight from the API (lib/player-session.ts); the host's
+      // credential is an httpOnly cookie, so the host stays on the server action.
+      let results
+      if (playerToken) {
+        results = await fetchPlayerResults(sessionId, playerToken)
+      } else {
+        const res = await getRoomResultsForPage(sessionId)
+        if (!res.ok) {
+          if (res.notAllowed) {
+            setNotAllowed(true)
+            return
+          }
+          throw new Error('Failed to load results')
+        }
+        results = res.results
+      }
+      const { players, endedReason: reason, status, themeConfig: theme } = results
+      setThemeConfig(theme)
       setLeaderboard(players)
       setRoomFinished(status === 'finished')
       if (reason) setEndedReason(reason)
@@ -107,17 +128,39 @@ export default function ResultsPage() {
 
   if (loading) {
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={themeConfig} surface={isPlayer ? 'player' : 'host'}>
         <div className="flex-1 flex items-center justify-center">
           <p className="text-[#9a9eab] text-sm">{t('loading')}</p>
         </div>
-      </GameBackground>
+      </ThemedGameBackground>
+    )
+  }
+
+  if (notAllowed) {
+    return (
+      <ThemedGameBackground variant="arena" themeConfig={themeConfig} surface="player">
+        <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6">
+          <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8 text-center">
+            <XCircle className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
+            <h1 className="text-xl font-semibold text-[#f2f0eb]">{t('notAllowedTitle')}</h1>
+            <p className="text-sm text-[#9a9eab] mt-2 leading-relaxed">{t('notAllowedHint')}</p>
+            <Link href="/" className="block mt-6">
+              <Button
+                size="lg"
+                className="w-full min-h-12 bg-[#f2f0eb] text-[#12141a] hover:bg-white font-semibold rounded-xl"
+              >
+                {tCommon('home')}
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </ThemedGameBackground>
     )
   }
 
   if (loadError) {
     return (
-      <GameBackground variant="arena">
+      <ThemedGameBackground variant="arena" themeConfig={themeConfig} surface={isPlayer ? 'player' : 'host'}>
         <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6">
           <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8 text-center">
             <XCircle className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
@@ -132,7 +175,7 @@ export default function ResultsPage() {
             </Button>
           </div>
         </div>
-      </GameBackground>
+      </ThemedGameBackground>
     )
   }
 
@@ -140,7 +183,7 @@ export default function ResultsPage() {
   const podiumOrder = top3.length >= 3 ? [top3[1], top3[0], top3[2]] : top3
 
   return (
-    <GameBackground variant="arena">
+    <ThemedGameBackground variant="arena" themeConfig={themeConfig} surface={isPlayer ? 'player' : 'host'}>
       <div className="flex-1 p-4 sm:p-6 md:p-10 flex items-start md:items-center justify-center overflow-y-auto">
         <div className="max-w-3xl xl:max-w-5xl w-full space-y-6 md:space-y-10">
           <div className="text-center space-y-3">
@@ -295,6 +338,6 @@ export default function ResultsPage() {
           </div>
         </div>
       </div>
-    </GameBackground>
+    </ThemedGameBackground>
   )
 }

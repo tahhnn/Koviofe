@@ -1,11 +1,15 @@
 import { cookies } from 'next/headers'
 import { LOCALE_COOKIE, isLocale } from '@/i18n/config'
+import { clientIpHeaders } from '@/lib/client-ip'
 
 const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082/api'
 
 async function getHeaders() {
   const headersInit: Record<string, string> = {
     'Content-Type': 'application/json',
+    // Without this the API attributes every call to the frontend container and
+    // its per-IP limiters become one global bucket — see lib/client-ip.ts.
+    ...(await clientIpHeaders()),
   }
   try {
     const cookieStore = await cookies()
@@ -75,7 +79,10 @@ export async function apiRequest(
         if (refreshToken) {
           const refreshRes = await fetch(`${API_URL}/auth/refresh`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            // AuthRateLimit is 20 per IP per minute and fails closed, so a
+            // refresh that arrives unattributed spends from a bucket shared by
+            // every user on the system.
+            headers: { 'Content-Type': 'application/json', ...(await clientIpHeaders()) },
             body: JSON.stringify({ refresh_token: refreshToken }),
           })
           if (refreshRes.ok) {

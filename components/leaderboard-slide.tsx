@@ -35,14 +35,17 @@ function Row({
   stage,
   delayMs,
   animate,
+  fill = false,
 }: {
   row: StandingRow
   isMe: boolean
   stage: boolean
   delayMs: number
   animate: boolean
+  fill?: boolean
 }) {
   const podium = row.rank <= 3 ? RANK_STYLES[row.rank - 1] : 'border-white/5 bg-black/30'
+  if (fill) return <FillRow row={row} podium={podium} delayMs={delayMs} animate={animate} />
   return (
     <div
       className={`flex items-center gap-3 rounded-2xl border px-3 py-2.5 ${stage ? 'sm:px-5 sm:py-4' : ''} ${podium} ${
@@ -75,6 +78,43 @@ function Row({
   )
 }
 
+/**
+ * A row sized off the viewport instead of breakpoints. The projector between
+ * questions shows nothing else, and the rows are read from the back of a hall:
+ * five of them split the full height, and the type grows with that height so a
+ * 16:10 laptop and a 1080p wall both end up with the names as large as fits.
+ */
+function FillRow({
+  row,
+  podium,
+  delayMs,
+  animate,
+}: {
+  row: StandingRow
+  podium: string
+  delayMs: number
+  animate: boolean
+}) {
+  return (
+    <div
+      className={`min-h-0 flex items-center gap-[2.5vh] rounded-[2vh] border-2 px-[3vh] ${podium} ${
+        animate ? 'animate-explain-item' : ''
+      }`}
+      style={{ animationDelay: animate ? `${delayMs}ms` : undefined }}
+    >
+      <div className="shrink-0 h-[70%] aspect-square flex items-center justify-center rounded-[1.5vh] bg-black/40 font-black tabular-nums text-[clamp(1.25rem,5vh,4rem)] leading-none">
+        {row.rank <= 3 ? MEDALS[row.rank - 1] : `#${row.rank}`}
+      </div>
+      <p className="min-w-0 flex-1 truncate font-black text-[#f2f0eb] text-[clamp(1.5rem,7vh,6rem)] leading-tight">
+        {row.nickname}
+      </p>
+      <p className="shrink-0 font-black tabular-nums text-[#e85d4c] text-[clamp(1.75rem,8vh,7rem)] leading-none">
+        {row.score}
+      </p>
+    </div>
+  )
+}
+
 export type LeaderboardSlideProps = {
   rows: StandingRow[]
   /** The viewer's own row. Null on the host screen, which is nobody's row. */
@@ -86,6 +126,9 @@ export type LeaderboardSlideProps = {
   /** 'stage' fills a host screen; 'sheet' fills a player's portrait panel. */
   variant?: 'stage' | 'sheet'
   animate?: boolean
+  /** Stage only: rows split the whole height and type scales with the
+   *  viewport. For a slide that owns the full screen, not a 16:9 card. */
+  fill?: boolean
   className?: string
 }
 
@@ -96,6 +139,7 @@ export function LeaderboardSlide({
   pointsEarned = null,
   variant = 'stage',
   animate = true,
+  fill = false,
   className = '',
 }: LeaderboardSlideProps) {
   const t = useTranslations('leaderboardSlide')
@@ -103,6 +147,40 @@ export function LeaderboardSlide({
   // Only when they are not already up there. Printing the same player twice
   // reads as a bug, and the top rows are the ones carrying the highlight.
   const meBelow = me && !rows.some(r => r.id === me.id) ? me : null
+
+  if (stage && fill) {
+    return (
+      <div className={`relative w-full h-full overflow-hidden flex flex-col gap-[2vh] ${className}`}>
+        {total > 0 && (
+          <p className="shrink-0 text-[#9a9eab] font-semibold text-[clamp(0.875rem,2.2vh,1.5rem)]">
+            {t('playerCount', { count: total })}
+          </p>
+        )}
+        {rows.length === 0 ? (
+          <p className="text-[#9a9eab] text-[clamp(1rem,4vh,2.5rem)]">{t('empty')}</p>
+        ) : (
+          // Always five tracks, so a room of three keeps the same row size
+          // instead of three rows ballooning to fill the screen.
+          <div
+            className="flex-1 min-h-0 grid gap-[1.6vh]"
+            style={{ gridTemplateRows: `repeat(${Math.max(rows.length, 5)}, minmax(0, 1fr))` }}
+          >
+            {rows.map((row, i) => (
+              <Row
+                key={row.id || row.rank}
+                row={row}
+                isMe={false}
+                stage
+                delayMs={i * 70}
+                animate={animate}
+                fill
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div

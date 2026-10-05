@@ -89,6 +89,33 @@ const rules: ErrorRule[] = [
     }),
   },
   {
+    // Sharing: only the owner may change a shared quiz, so the way forward is
+    // always to duplicate it. Sending them to the dashboard would lose the
+    // quiz they are looking at, so this one stays put.
+    test: (m) => /shared quiz is read-only|chỉ cho xem — hãy nhân bản/i.test(m),
+    resolve: () => ({
+      titleKey: 'duplicateInsteadTitle',
+      descriptionKey: 'duplicateInsteadBody',
+    }),
+  },
+  {
+    // Someone else saved between this editor's load and their save. Reloading
+    // is the fix, and it is the only one — the server refused the write.
+    test: (m) => /changed by someone else|vừa được người khác sửa/i.test(m),
+    resolve: () => ({
+      titleKey: 'quizConflictTitle',
+      descriptionKey: 'quizConflictBody',
+      requiresReload: true,
+    }),
+  },
+  {
+    test: (m) => /being played right now|đang có phòng chơi/i.test(m),
+    resolve: () => ({
+      titleKey: 'quizInPlayTitle',
+      descriptionKey: 'quizInPlayBody',
+    }),
+  },
+  {
     test: (m) => /do not own this room|bạn không phải chủ phòng này/i.test(m),
     resolve: () => ({
       titleKey: 'notOwnerTitle',

@@ -65,9 +65,28 @@ function channelFromJwt(token: string): string {
   return ''
 }
 
-export function useWebSocket(roomId: string, pinCode?: string) {
+/** Delay before reconnect attempt `n` (0-based): base, doubled per failure,
+ *  capped at 30s. A fixed 2.5s retry meant a phone whose session had ended
+ *  asked for a token every 2.5s for as long as the tab stayed open. */
+function backoff(base: number, n: number): number {
+  return Math.min(30_000, base * 2 ** Math.min(n, 4))
+}
+
+export interface UseWebSocketOptions {
+  /** Players mint their token from the player endpoint directly. Without
+   *  this every player first asked the host endpoint and got a guaranteed
+   *  401 (58 of them across the two B.FEST nights). */
+  role?: 'host' | 'player'
+  /** False tears the connection down and stops all retries. */
+  enabled?: boolean
+}
+
+export function useWebSocket(roomId: string, pinCode?: string, options: UseWebSocketOptions = {}) {
+  const { role = 'host', enabled = true } = options
   const ws = useRef<WebSocket | null>(null)
   const [connected, setConnected] = useState(false)
+  /** The server refused this player's token for good (row gone, room over). */
+  const [sessionEnded, setSessionEnded] = useState(false)
   const [data, setData] = useState<Record<string, any>>({})
   const messageHandlers = useRef<Map<string, (data: any) => void>>(new Map())
   const pinRef = useRef(pinCode)
@@ -77,10 +96,32 @@ export function useWebSocket(roomId: string, pinCode?: string) {
   }, [pinCode])
 
   useEffect(() => {
-    if (!roomId) return
+    if (!roomId || !enabled) return
 
     let active = true
     let reconnectTimeout: ReturnType<typeof setTimeout>
+    let failures = 0
+    const retry = (base: number) => {
+      if (!active) return
+      reconnectTimeout = setTimeout(startConnection, backoff(base, failures))
+      failures += 1
+    }
+
+    const fetchPlayerToken = async (): Promise<{ token: string; channel: string } | 'ended' | 'finished' | null> => {
+      const playerToken = sessionStorage.getItem(`player_token_${roomId}`)
+      if (!playerToken) return null
+      const res = await fetch(`${getApiBase()}/realtime/player-token`, {
+        headers: { 'X-Player-Token': playerToken },
+      })
+      // 401/403: the player row is gone or the token is for another room.
+      // 404: the room has finished — the page's poll takes the player to the
+      // results. Neither recovers by asking again.
+      if (res.status === 401 || res.status === 403) return 'ended'
+      if (res.status === 404) return 'finished'
+      if (!res.ok) return null
+      const data = await res.json()
+      return { token: String(data.token || ''), channel: String(data.channel || '') }
+    }
 
     const startConnection = async () => {
       try {
@@ -103,6 +144,25 @@ export function useWebSocket(roomId: string, pinCode?: string) {
         if (cachedToken) {
           token = cachedToken
           channelFromToken = channelFromJwt(cachedToken)
+        } else if (role === 'player') {
+          const minted = await fetchPlayerToken()
+          if (minted === 'ended') {
+            setSessionEnded(true)
+            return
+          }
+          if (minted === 'finished') return
+          if (minted && minted.token) {
+            token = minted.token
+            sessionStorage.setItem(`centrifugo_token_${roomId}`, token)
+            if (minted.channel) {
+              channelFromToken = minted.channel
+              const parts = minted.channel.split(':')
+              if (parts[0] === 'rooms' && parts[1]) {
+                resolvedPin = parts[1]
+                sessionStorage.setItem(`pin_code_${roomId}`, resolvedPin)
+              }
+            }
+          }
         } else {
           const tokenRes = await fetch(
             `/api/realtime/centrifugo?room_id=${encodeURIComponent(roomId)}`,
@@ -158,7 +218,7 @@ export function useWebSocket(roomId: string, pinCode?: string) {
 
         if (!active || !token || !subscribeChannel) {
           console.warn('[WS] missing token or channel, retrying...', { token, subscribeChannel })
-          reconnectTimeout = setTimeout(startConnection, 2500)
+          retry(2500)
           return
         }
 
@@ -217,6 +277,7 @@ export function useWebSocket(roomId: string, pinCode?: string) {
 
             if (response.id === 1 && (response.result || response.connect)) {
               setConnected(true)
+              failures = 0
 
               // The connection token's `channels` claim subscribes us server
               // side, so the connect reply already lists the channel under
@@ -318,15 +379,11 @@ export function useWebSocket(roomId: string, pinCode?: string) {
           if (ws.current !== socket) return
           ws.current = null
           setConnected(false)
-          if (active) {
-            reconnectTimeout = setTimeout(startConnection, 3000)
-          }
+          retry(3000)
         }
       } catch (err) {
         console.error('Centrifugo setup failed, retrying...', err)
-        if (active) {
-          reconnectTimeout = setTimeout(startConnection, 5000)
-        }
+        retry(5000)
       }
     }
 
@@ -339,7 +396,7 @@ export function useWebSocket(roomId: string, pinCode?: string) {
         ws.current.close()
       }
     }
-  }, [roomId, pinCode])
+  }, [roomId, pinCode, role, enabled])
 
   const send = useCallback((_message: WebSocketMessage) => {
     // REST drives game state; Centrifugo is receive-only for clients
@@ -354,6 +411,7 @@ export function useWebSocket(roomId: string, pinCode?: string) {
 
   return {
     connected,
+    sessionEnded,
     send,
     on,
     data,

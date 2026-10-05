@@ -198,7 +198,7 @@ export function GiphyPicker({ isOpen, onClose, onSelect }: GiphyPickerProps) {
                 </Button>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto pb-0.5 scrollbar-thin">
+              <div className="flex gap-2 overflow-x-auto pb-0.5">
                 <button
                   type="button"
                   onClick={() => {
