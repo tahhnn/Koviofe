@@ -8,13 +8,14 @@ import { BrandMark } from '@/components/brand-mark'
 import { Button } from '@/components/ui/button'
 import { GameBackground } from '@/components/game-background'
 import { authClient } from '@/lib/auth-client'
-import { ArrowLeft, Shield, Users, BadgePercent } from 'lucide-react'
+import { ArrowLeft, Shield, Users, BadgePercent, ScrollText } from 'lucide-react'
 
 // Labels are translated, so the array is built inside the component where the
 // hook is available rather than once at module scope.
 const navItems = [
   { href: '/admin/users', key: 'users' as const, icon: Users },
   { href: '/admin/license', key: 'license' as const, icon: BadgePercent },
+  { href: '/admin/audit', key: 'audit' as const, icon: ScrollText },
 ]
 
 export default function AdminLayout(

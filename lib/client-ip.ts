@@ -15,6 +15,10 @@ import { headers } from 'next/headers'
  * own real_ip resolution before this process ever sees it, and that resolution
  * only trusts the docker bridge and loopback — so a visitor cannot put an
  * address of their choosing here.
+ *
+ * The browser's User-Agent rides along for the same reason: the admin audit
+ * trail records it, and without this every action taken through a server
+ * action was attributed to "node".
  */
 export async function clientIpHeaders(): Promise<Record<string, string>> {
   try {
@@ -24,6 +28,8 @@ export async function clientIpHeaders(): Promise<Record<string, string>> {
     if (forwarded) out['X-Forwarded-For'] = forwarded
     const real = h.get('x-real-ip')
     if (real) out['X-Real-IP'] = real
+    const ua = h.get('user-agent')
+    if (ua) out['User-Agent'] = ua
     return out
   } catch {
     // No request to read: a static prerender, or a build-time call. There is

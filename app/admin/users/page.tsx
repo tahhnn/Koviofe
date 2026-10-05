@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useTranslations } from 'next-intl'
+import { useLocale, useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +16,7 @@ import { RefreshCw, Search, Shield, BadgePercent } from 'lucide-react'
 import { isPaidPlan } from '@/lib/license'
 import { useToast } from '@/components/ui/toast'
 import { useRouter } from 'next/navigation'
+import { formatDateTime } from '@/lib/audit-labels'
 
 type DurationKey = '30' | '90' | '365' | 'lifetime'
 
@@ -27,6 +28,7 @@ function accountLabel(u: Pick<AdminUserRow, 'role' | 'account_type'>) {
 
 export default function AdminUsersPage() {
   const t = useTranslations('adminUsers')
+  const locale = useLocale()
   const toast = useToast()
   const router = useRouter()
   const [users, setUsers] = useState<AdminUserRow[]>([])
@@ -179,7 +181,7 @@ export default function AdminUsersPage() {
 
       <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/80 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-sm">
+          <table className="w-full min-w-[1040px] text-sm">
             <thead>
               <tr className="border-b border-[#2c313d] text-left text-[11px] uppercase tracking-wider text-[#9a9eab]">
                 <th className="px-4 py-3 font-semibold">ID</th>
@@ -187,19 +189,21 @@ export default function AdminUsersPage() {
                 <th className="px-4 py-3 font-semibold">{t('type')}</th>
                 <th className="px-4 py-3 font-semibold">License</th>
                 <th className="px-4 py-3 font-semibold">{t('status')}</th>
+                <th className="px-4 py-3 font-semibold">{t('lastLogin')}</th>
+                <th className="px-4 py-3 font-semibold text-right">{t('rooms30d')}</th>
                 <th className="px-4 py-3 font-semibold text-right">{t('licenseAdmin')}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-[#9a9eab]">
+                  <td colSpan={8} className="px-4 py-10 text-center text-[#9a9eab]">
                     {t('loading')}
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-[#9a9eab]">
+                  <td colSpan={8} className="px-4 py-10 text-center text-[#9a9eab]">
                     {t('noUsers')}
                   </td>
                 </tr>
@@ -211,7 +215,9 @@ export default function AdminUsersPage() {
                     <tr key={u.id} className="border-b border-[#2c313d]/80 hover:bg-white/[0.02]">
                       <td className="px-4 py-3 text-[#9a9eab] tabular-nums">#{u.id}</td>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-[#f2f0eb]">{u.nickname || '—'}</div>
+                        <Link href={`/admin/users/${u.id}`} className="font-medium text-[#f2f0eb] hover:text-[#e85d4c]">
+                          {u.nickname || '—'}
+                        </Link>
                         <div className="text-xs text-[#9a9eab] flex items-center gap-1.5 mt-0.5">
                           {u.email}
                           {u.is_seed_admin && (
@@ -254,6 +260,10 @@ export default function AdminUsersPage() {
                           {u.is_active ? t('active') : t('inactive')}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-xs text-[#9a9eab] whitespace-nowrap">
+                        {u.last_login_at ? formatDateTime(u.last_login_at, locale) : t('neverLoggedIn')}
+                      </td>
+                      <td className="px-4 py-3 text-right text-[#c5c2ba] tabular-nums">{u.rooms_30d ?? 0}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col items-end gap-2">
                           <div className="flex flex-wrap justify-end gap-2 items-center">
