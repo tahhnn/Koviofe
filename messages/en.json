@@ -105,7 +105,9 @@
     "endedEarlyHostExpired": "The game ended early because your plan expired. Renew it, then start a new room.",
     "endedEarlyHostRevoked": "The game ended early because an admin revoked this account's plan.",
     "liveTitle": "Standings still updating",
-    "liveHint": "Other players are still going — ranks will keep changing until the whole room is finished."
+    "liveHint": "Other players are still going — ranks will keep changing until the whole room is finished.",
+    "notAllowedTitle": "Results can't be opened here",
+    "notAllowedHint": "Results are only available in the browser you played from, or when signed in as the host."
   },
   "admin": {
     "checking": "Checking admin access…",
@@ -172,7 +174,11 @@
     "finishTitle": "You're done!",
     "finishBody": "You have answered every question. Opening the results…",
     "finishScore": "{score} points",
-    "finishContinue": "See results"
+    "finishContinue": "See results",
+    "sessionGoneTitle": "Your session on this device has ended",
+    "sessionGoneHint": "You left the room or joined it from another tab. Join again with the PIN if the room is still open.",
+    "rejoin": "Join again",
+    "submitTooFast": "Too many tries — wait a few seconds and try again"
   },
   "settings": {
     "planSection": "Subscription plan",

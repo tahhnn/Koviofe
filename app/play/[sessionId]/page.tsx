@@ -11,7 +11,7 @@ import { useWebSocket } from '@/hooks/use-websocket'
 // answers — and that burst is what a single Node process cannot take.
 import { submitAnswer } from '@/lib/submit-answer'
 import { fetchPlayerQuestion } from '@/lib/player-question'
-import { fetchPlayerSession, fetchPlayerStandings } from '@/lib/player-session'
+import { fetchPlayerSession, fetchPlayerStandings, isPlayerSessionGone } from '@/lib/player-session'
 import { ThemedGameBackground } from '@/components/game-background'
 import { Hourglass, ArrowRight, XCircle, Check, MapPin } from 'lucide-react'
 import {
@@ -36,6 +36,8 @@ const LEADERBOARD_DWELL_S = 6
 /** How often the lobby poll re-asks the server while the websocket is down.
  *  This is the only channel then, so it has to be quick. */
 const POLL_FALLBACK_MS = 2500
+/** How long the answer button stays down after a 429. */
+const RATE_LIMIT_COOLDOWN_MS = 5000
 /** And how often while the websocket is up, where it is a safety net and
  *  nothing more: every state change arrives as a push.
  *
@@ -104,6 +106,9 @@ export default function PlayerGameScreen() {
   const [playerToken, setPlayerToken] = useState('')
   const [roundLeaderboard, setRoundLeaderboard] = useState<{ id: string; nickname: string; score: number }[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
+  // The server no longer accepts this tab's player token. Terminal: every
+  // poll, socket and submit stops, and the player is offered the join page.
+  const [sessionGone, setSessionGone] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [pinAspect, setPinAspect] = useState<number | null>(null)
 
@@ -138,6 +143,8 @@ export default function PlayerGameScreen() {
   const startTimeRef = useRef<number>(0)
   const isPlayerPacedRef = useRef(false)
   const submittingRef = useRef(false)
+  /** Question id the countdown already auto-submitted for — see the timer. */
+  const autoSubmittedForRef = useRef<string | null>(null)
   const currentQuestionRef = useRef<Question | null>(null)
   const participantIdRef = useRef('')
   const playerTokenRef = useRef('')
@@ -486,7 +493,14 @@ export default function PlayerGameScreen() {
   const myNickname = typeof window !== 'undefined'
     ? sessionStorage.getItem(`nickname_${sessionId}`) || ''
     : ''
-  const { connected, send, on } = useWebSocket(sessionId, pinHint)
+  const { connected, sessionEnded, send, on } = useWebSocket(sessionId, pinHint, {
+    role: 'player',
+    enabled: !sessionGone,
+  })
+  useEffect(() => {
+    if (sessionEnded) setSessionGone(true)
+  }, [sessionEnded])
+  const rejoinHref = pinHint ? `/join?pin=${encodeURIComponent(pinHint)}` : '/join'
 
   const runStartCountdown = useCallback((): Promise<void> => {
     return new Promise((resolve) => {
@@ -577,9 +591,20 @@ export default function PlayerGameScreen() {
   const loadGameState = useCallback(async () => {
       try {
         const pToken = sessionStorage.getItem(`player_token_${sessionId}`)
-        if (pToken) setPlayerToken(pToken)
+        if (!pToken) {
+          // A play link opened outside the tab that joined (a new tab, Zalo's
+          // in-app browser, a shared link). Without a token every call here is
+          // a 401, and the page used to retry them for as long as it stayed
+          // open. The join page is the only place this can go.
+          const pin = sessionStorage.getItem(`pin_code_${sessionId}`)
+          // Also stops the poll and the socket while the navigation happens.
+          setSessionGone(true)
+          router.replace(pin ? `/join?pin=${encodeURIComponent(pin)}` : '/join')
+          return
+        }
+        setPlayerToken(pToken)
 
-        const session = await fetchPlayerSession(sessionId, pToken || undefined)
+        const session = await fetchPlayerSession(sessionId, pToken)
         if (session.status === 'finished') {
           router.push(`/results/${sessionId}`)
           return
@@ -645,6 +670,8 @@ export default function PlayerGameScreen() {
         const msg = String(error?.message || '')
         if (msg === 'ROOM_FINISHED') {
           router.push(`/results/${sessionId}`)
+        } else if (isPlayerSessionGone(error)) {
+          setSessionGone(true)
         } else {
           setLoadError(t('loadRoomFailed'))
         }
@@ -659,7 +686,7 @@ export default function PlayerGameScreen() {
   }, [loadGameState])
 
   useEffect(() => {
-    if (loading) return
+    if (loading || sessionGone) return
 
     let cancelled = false
     const poll = async () => {
@@ -719,6 +746,10 @@ export default function PlayerGameScreen() {
           applyQuestion(res.question, session.currentQuestionIndex, session.questionActiveUntil)
         }
       } catch (e) {
+        if (isPlayerSessionGone(e)) {
+          setSessionGone(true)
+          return
+        }
         console.error('Player lobby poll failed', e)
       }
     }
@@ -735,7 +766,7 @@ export default function PlayerGameScreen() {
     // `connected` is a dependency on purpose: the effect re-arms on every
     // socket transition, which both re-picks the interval and forces the
     // immediate poll above.
-  }, [loading, connected, sessionId, router, beginGameFromLobby, applyQuestion, applyExplanationDuration])
+  }, [loading, sessionGone, connected, sessionId, router, beginGameFromLobby, applyQuestion, applyExplanationDuration])
 
   useEffect(() => {
     if (!connected) return
@@ -898,6 +929,21 @@ export default function PlayerGameScreen() {
           router.push(`/results/${sessionId}`)
           return
         }
+        if (res.code === 'SESSION_GONE') {
+          // Leave submittingRef latched: nothing from this tab can land again.
+          setSessionGone(true)
+          return
+        }
+        if (res.code === 'RATE_LIMITED') {
+          // Hold the button down for a beat; an immediate retry only extends
+          // the limit.
+          setSubmitError(t('submitTooFast'))
+          setTimeout(() => {
+            setSubmitted(false)
+            submittingRef.current = false
+          }, RATE_LIMIT_COOLDOWN_MS)
+          return
+        }
         if (res.code === 'LATE') {
           const fb = { isCorrect: false, pointsEarned: 0, isPoll }
           if (isPlayerPacedRef.current || isPoll) {
@@ -905,6 +951,9 @@ export default function PlayerGameScreen() {
           } else {
             pendingFeedbackRef.current = fb
           }
+        } else if (res.code === 'ALREADY_ANSWERED') {
+          // An earlier attempt did land. The score is already counted; carry
+          // on as if this one had succeeded, without inventing feedback.
         } else {
           setSubmitted(false)
           submittingRef.current = false
@@ -1003,7 +1052,10 @@ export default function PlayerGameScreen() {
   }, [sessionId, router, send, applyQuestion, clearSequenceTimer])
 
   useEffect(() => {
-    if (!currentQuestion || submitted) return
+    // The session-gone screen replaces the question, but this component stays
+    // mounted: without the guard the countdown kept running underneath it and
+    // still auto-submitted into a session the poll already knew was over.
+    if (!currentQuestion || submitted || sessionGone) return
 
     timerRef.current = setInterval(() => {
       const q = currentQuestionRef.current
@@ -1014,7 +1066,12 @@ export default function PlayerGameScreen() {
 
       if (remaining <= 0) {
         if (timerRef.current) clearInterval(timerRef.current)
-        if (!submittingRef.current) {
+        // Once per question. A failed submit resets `submitted`, which re-runs
+        // this effect with the clock still at zero; without the guard that
+        // became a submit every second until the question changed — 87 of
+        // them from one phone on 2026-10-02. A manual retry stays possible.
+        if (!submittingRef.current && autoSubmittedForRef.current !== q.id) {
+          autoSubmittedForRef.current = q.id
           const type = q.type
           let pending: string | null = null
           if (type === 'short_answer') {
@@ -1034,14 +1091,16 @@ export default function PlayerGameScreen() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [currentQuestion, submitted, handleSubmitAnswer])
+  }, [currentQuestion, submitted, sessionGone, handleSubmitAnswer])
 
   useEffect(() => {
     const handleUnload = () => {
       const pToken = sessionStorage.getItem(`player_token_${sessionId}`)
       if (!pToken) return
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082/api'
-      fetch(`${API_URL}/rooms/${sessionId}/leave`, {
+      // reason=unload: beforeunload also fires on a refresh, so the server only
+      // flags the player and restores them on the reloaded page's first call.
+      fetch(`${API_URL}/rooms/${sessionId}/leave?reason=unload`, {
         method: 'POST',
         headers: { 'X-Player-Token': pToken },
         keepalive: true,
@@ -1059,6 +1118,29 @@ export default function PlayerGameScreen() {
           <div className="text-center">
             <div className="mx-auto h-10 w-10 rounded-full border-2 border-[#2c313d] border-t-[#e85d4c] animate-spin" />
             <p className="text-sm text-[#9a9eab] mt-4">{t('loading')}</p>
+          </div>
+        </div>
+      </ThemedGameBackground>
+    )
+  }
+
+  if (sessionGone) {
+    return (
+      <ThemedGameBackground variant="arena" themeConfig={gameState?.themeConfig} surface="player">
+        <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8 text-center">
+            <XCircle className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
+            <h1 className="text-xl font-semibold text-[#f2f0eb]">{t('sessionGoneTitle')}</h1>
+            <p className="text-sm text-[#9a9eab] mt-2 leading-relaxed">
+              {t('sessionGoneHint')}
+            </p>
+            <Button
+              onClick={() => router.push(rejoinHref)}
+              size="lg"
+              className="mt-6 w-full min-h-12 bg-[#f2f0eb] text-[#12141a] hover:bg-white font-semibold rounded-xl"
+            >
+              {t('rejoin')}
+            </Button>
           </div>
         </div>
       </ThemedGameBackground>

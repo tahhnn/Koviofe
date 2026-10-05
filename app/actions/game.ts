@@ -118,6 +118,29 @@ export async function getRoomResults(sessionId: string, playerToken?: string) {
   return mapRoomResults(await apiRequest(`/rooms/${sessionId}/results`, 'GET', undefined, extra))
 }
 
+/** getRoomResults for the results page, with "not allowed" as data.
+ *
+ *  A thrown error from a server action reaches the browser as a 500 and the
+ *  page can only show its generic error. That is what someone opening a
+ *  results link with neither a player token nor a host session got (Zalo's
+ *  in-app browser, 2026-10-02) — and retrying could never help them. */
+export async function getRoomResultsForPage(sessionId: string): Promise<
+  { ok: true; results: Awaited<ReturnType<typeof getRoomResults>> } | { ok: false; notAllowed: boolean }
+> {
+  try {
+    return { ok: true, results: await getRoomResults(sessionId) }
+  } catch (e: any) {
+    return { ok: false, notAllowed: NOT_ALLOWED_RESULTS.test(String(e?.message || '')) }
+  }
+}
+
+/** No session at all (apiRequest's 401 sentinel), or signed in as someone who
+ *  is not this room's host — an admin opening a host's link, for one. The
+ *  Vietnamese halves are the backend catalog's strings, since the API answers
+ *  in the page's language. */
+const NOT_ALLOWED_RESULTS =
+  /^UNAUTHORIZED_OR_FORBIDDEN$|you do not own this room|bạn không phải chủ phòng này|authentication required|cần đăng nhập/i
+
 // Update game session state via REST endpoints
 export async function updateGameSessionState(
   sessionId: string,

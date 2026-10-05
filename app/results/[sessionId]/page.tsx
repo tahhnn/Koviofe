@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl'
 import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { getRoomResults } from '@/app/actions/game'
+import { getRoomResultsForPage } from '@/app/actions/game'
 import { fetchPlayerResults } from '@/lib/player-session'
 import { ThemedGameBackground } from '@/components/game-background'
 import { BrandMark } from '@/components/brand-mark'
@@ -34,6 +34,8 @@ export default function ResultsPage() {
   const [userRank, setUserRank] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  // Neither a player token in this tab nor a host session: no retry can help.
+  const [notAllowed, setNotAllowed] = useState(false)
   const [isPlayer, setIsPlayer] = useState(false)
   const [themeConfig, setThemeConfig] = useState('')
   // Seeded from the URL the redirect carried, then replaced by the API's value
@@ -60,9 +62,21 @@ export default function ResultsPage() {
 
       // Players read straight from the API (lib/player-session.ts); the host's
       // credential is an httpOnly cookie, so the host stays on the server action.
-      const { players, endedReason: reason, status, themeConfig: theme } = playerToken
-        ? await fetchPlayerResults(sessionId, playerToken)
-        : await getRoomResults(sessionId)
+      let results
+      if (playerToken) {
+        results = await fetchPlayerResults(sessionId, playerToken)
+      } else {
+        const res = await getRoomResultsForPage(sessionId)
+        if (!res.ok) {
+          if (res.notAllowed) {
+            setNotAllowed(true)
+            return
+          }
+          throw new Error('Failed to load results')
+        }
+        results = res.results
+      }
+      const { players, endedReason: reason, status, themeConfig: theme } = results
       setThemeConfig(theme)
       setLeaderboard(players)
       setRoomFinished(status === 'finished')
@@ -117,6 +131,28 @@ export default function ResultsPage() {
       <ThemedGameBackground variant="arena" themeConfig={themeConfig} surface={isPlayer ? 'player' : 'host'}>
         <div className="flex-1 flex items-center justify-center">
           <p className="text-[#9a9eab] text-sm">{t('loading')}</p>
+        </div>
+      </ThemedGameBackground>
+    )
+  }
+
+  if (notAllowed) {
+    return (
+      <ThemedGameBackground variant="arena" themeConfig={themeConfig} surface="player">
+        <div className="flex-1 flex items-start sm:items-center justify-center p-4 sm:p-6">
+          <div className="max-w-md w-full rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-6 sm:p-8 text-center">
+            <XCircle className="w-8 h-8 text-[#e85d4c] mx-auto mb-4" />
+            <h1 className="text-xl font-semibold text-[#f2f0eb]">{t('notAllowedTitle')}</h1>
+            <p className="text-sm text-[#9a9eab] mt-2 leading-relaxed">{t('notAllowedHint')}</p>
+            <Link href="/" className="block mt-6">
+              <Button
+                size="lg"
+                className="w-full min-h-12 bg-[#f2f0eb] text-[#12141a] hover:bg-white font-semibold rounded-xl"
+              >
+                {tCommon('home')}
+              </Button>
+            </Link>
+          </div>
         </div>
       </ThemedGameBackground>
     )

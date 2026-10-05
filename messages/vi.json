@@ -105,7 +105,9 @@
     "endedEarlyHostExpired": "Trận đấu bị kết thúc sớm vì gói của bạn đã hết hạn. Gia hạn rồi tạo phòng mới nhé.",
     "endedEarlyHostRevoked": "Trận đấu bị kết thúc sớm vì quản trị viên đã thu hồi gói của tài khoản này.",
     "liveTitle": "Bảng xếp hạng đang cập nhật",
-    "liveHint": "Vẫn còn người đang chơi — thứ hạng sẽ thay đổi cho tới khi cả phòng kết thúc."
+    "liveHint": "Vẫn còn người đang chơi — thứ hạng sẽ thay đổi cho tới khi cả phòng kết thúc.",
+    "notAllowedTitle": "Không mở được kết quả trên thiết bị này",
+    "notAllowedHint": "Kết quả chỉ xem được trên thiết bị và trình duyệt đã dùng để chơi, hoặc khi đăng nhập bằng tài khoản host."
   },
   "admin": {
     "checking": "Đang kiểm tra quyền quản trị…",
@@ -172,7 +174,11 @@
     "finishTitle": "Bạn đã hoàn thành!",
     "finishBody": "Bạn đã trả lời hết các câu hỏi. Đang mở bảng kết quả…",
     "finishScore": "{score} điểm",
-    "finishContinue": "Xem kết quả"
+    "finishContinue": "Xem kết quả",
+    "sessionGoneTitle": "Phiên chơi trên thiết bị này đã kết thúc",
+    "sessionGoneHint": "Bạn đã rời phòng hoặc vào phòng từ một tab khác. Hãy vào lại bằng mã PIN nếu phòng vẫn đang chờ.",
+    "rejoin": "Vào lại phòng",
+    "submitTooFast": "Bạn gửi quá nhanh — đợi vài giây rồi thử lại"
   },
   "settings": {
     "planSection": "Gói đăng ký",

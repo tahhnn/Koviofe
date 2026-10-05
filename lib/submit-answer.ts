@@ -34,6 +34,14 @@ export type SubmitFailure =
   /** The window shut before the answer landed: no score, but not an error the
    *  player did anything about. */
   | 'LATE'
+  /** This answer is already recorded (a double tap, or a retry of a request
+   *  that did land). Nothing to do. */
+  | 'ALREADY_ANSWERED'
+  /** The server no longer knows this player. Retrying cannot succeed — on
+   *  B.FEST 2026-10-02 one phone retried this 87 times in 80 seconds. */
+  | 'SESSION_GONE'
+  /** Over the per-player limit. Retrying immediately only extends it. */
+  | 'RATE_LIMITED'
   /** Anything else — the player should be allowed to try again. */
   | 'FAILED'
 
@@ -56,12 +64,27 @@ export interface SubmitAnswerResult {
   code?: SubmitFailure
 }
 
-/** ROOM_FINISHED is a protocol sentinel and is deliberately absent from the
+/** The backend's `code` field and the HTTP status decide first. The message
+ *  matching below is the fallback for a backend that predates `code`.
+ *
+ *  ROOM_FINISHED is a protocol sentinel and is deliberately absent from the
  *  backend catalog, so it arrives verbatim in both languages. The other two
  *  are translated, hence both spellings. */
-function classify(raw: string): SubmitFailure {
-  if (raw.includes('ROOM_FINISHED')) return 'ROOM_FINISHED'
+function classify(raw: string, status: number, code: string): SubmitFailure {
+  if (raw.includes('ROOM_FINISHED') || code === 'ROOM_FINISHED') return 'ROOM_FINISHED'
+  if (code === 'LATE') return 'LATE'
+  if (code === 'ALREADY_ANSWERED') return 'ALREADY_ANSWERED'
+  if (code === 'RATE_LIMITED' || status === 429) return 'RATE_LIMITED'
   const m = raw.toLowerCase()
+  // Not every 404 means the player is gone ("Question not found" is one too),
+  // so a 404 without a code only counts when its text says so.
+  if (
+    code === 'PLAYER_NOT_FOUND' || code === 'SESSION_INVALID' || status === 401 || status === 403 ||
+    (status === 404 && /player not found|không tìm thấy người chơi/.test(m))
+  ) {
+    return 'SESSION_GONE'
+  }
+  if (/already answered|đã trả lời câu hỏi này/.test(m)) return 'ALREADY_ANSWERED'
   if (
     /time limit exceeded|not currently active|room is not active|expired/.test(m) ||
     /hết thời gian|hiện không mở|phòng chưa bắt đầu|hết hạn/.test(m)
@@ -115,7 +138,8 @@ export async function submitAnswer(
     const data = await res.json().catch(() => ({}))
     if (!res.ok) {
       const message = data?.error || 'Failed to submit answer'
-      return { error: message, code: classify(String(message)) }
+      const code = typeof data?.code === 'string' ? data.code : ''
+      return { error: message, code: classify(String(message), res.status, code) }
     }
 
     return {

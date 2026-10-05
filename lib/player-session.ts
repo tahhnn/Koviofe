@@ -49,9 +49,31 @@ async function playerGet(path: string, playerToken?: string) {
   })
   const data = await res.json().catch(() => null)
   if (!res.ok) {
-    throw new Error(String(data?.error || `Request failed with status ${res.status}`))
+    throw new PlayerApiError(
+      String(data?.error || `Request failed with status ${res.status}`),
+      res.status,
+      typeof data?.code === 'string' ? data.code : '',
+    )
   }
   return data
+}
+
+/** A failed player read, with what the caller needs to decide whether trying
+ *  again can help. The message stays the API's text so existing catch blocks
+ *  that compare it (ROOM_FINISHED) keep working. */
+export class PlayerApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code: string) {
+    super(message)
+    this.name = 'PlayerApiError'
+  }
+}
+
+/** True when the server will never accept this player token again: the row
+ *  was removed (left the lobby and never came back, or joined elsewhere), the
+ *  token is for another room, or it expired. Polling on past this answered 401
+ *  every 2.5s for as long as the tab stayed open (B.FEST 2026-10-03). */
+export function isPlayerSessionGone(e: unknown): boolean {
+  return e instanceof PlayerApiError && (e.status === 401 || e.status === 403)
 }
 
 export async function fetchPlayerSession(sessionId: string, playerToken?: string) {
