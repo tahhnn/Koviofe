@@ -14,6 +14,8 @@ export type AdminUserRow = {
   is_active: boolean
   is_seed_admin: boolean
   created_at: string
+  last_login_at?: string
+  rooms_30d?: number
 }
 
 export async function adminListUsers(q?: string): Promise<AdminUserRow[]> {

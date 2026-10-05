@@ -1,6 +1,7 @@
 'use server'
 
 import { cookies } from 'next/headers'
+import { clientIpHeaders } from '@/lib/client-ip'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -30,7 +31,9 @@ export async function clearAuthCookies() {
     try {
       await fetch(`${API_URL}/auth/logout`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // The logout is recorded in the audit trail; attribute it to the
+        // visitor, not to this container.
+        headers: { 'Content-Type': 'application/json', ...(await clientIpHeaders()) },
         body: JSON.stringify({ refresh_token: refresh }),
       })
     } catch {

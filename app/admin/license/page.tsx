@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
+import { downloadCsv } from '@/lib/audit-labels'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -280,15 +281,10 @@ export default function AdminLicensePage() {
         action: histAction || undefined,
       })
       // The CSV arrives through a server action as text, so the file is built
-      // here. The BOM the API prefixes is preserved — dropping it is what makes
-      // Excel mangle Vietnamese names.
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `license-history-${new Date().toISOString().slice(0, 10)}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      // here. The API's BOM does not survive that trip (fetch's text() strips
+      // it), and without one Excel mangles Vietnamese names — downloadCsv puts
+      // it back.
+      downloadCsv(csv, `license-history-${new Date().toISOString().slice(0, 10)}.csv`)
       flash(t('csvDownloaded'))
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : t('csvFailed'))
