@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useFormatter, useTranslations } from 'next-intl'
-import { RefreshCw, Save } from 'lucide-react'
+import { Download, RefreshCw, Save } from 'lucide-react'
+import { downloadCsv } from '@/lib/audit-labels'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { BankTransactionsPanel } from '@/components/admin/bank-transactions-panel'
 import {
   adminCancelPaymentOrder,
   adminConfirmPaymentOrder,
+  adminExportPaymentOrdersCsv,
   adminGetCheckout,
   adminListPaymentOrders,
   adminListPaymentProducts,
@@ -103,6 +105,14 @@ export function PaymentsTab({ onChanged }: { onChanged?: () => void }) {
       setProducts((prev) => prev.map((p) => (p.id === id ? r.data : p)))
       flash(t('productSaved', { id }))
     } else setErr(r.error)
+  }
+
+  const exportCsv = async () => {
+    setBusy('export')
+    const r = await adminExportPaymentOrdersCsv({ status, q })
+    setBusy(null)
+    if (r.ok) downloadCsv(r.data, `payment-orders-${new Date().toISOString().slice(0, 10)}.csv`)
+    else setErr(r.error)
   }
 
   const confirmOrder = async (o: AdminOrderRow) => {
@@ -306,6 +316,16 @@ export function PaymentsTab({ onChanged }: { onChanged?: () => void }) {
             className="h-9 rounded-lg text-xs bg-white/10 hover:bg-white/15 text-[#f2f0eb]"
           >
             <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            type="button"
+            disabled={busy === 'export'}
+            onClick={exportCsv}
+            title={t('exportCsv')}
+            className="h-9 rounded-lg text-xs bg-white/10 hover:bg-white/15 text-[#f2f0eb]"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="ml-1.5">{t('exportCsv')}</span>
           </Button>
         </div>
 

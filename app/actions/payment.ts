@@ -1,6 +1,6 @@
 'use server'
 
-import { apiRequest } from '@/services/api/client'
+import { apiRequest, apiRequestText } from '@/services/api/client'
 import { revalidatePath } from 'next/cache'
 
 export type PaymentProduct = {
@@ -236,5 +236,30 @@ export async function adminDismissBankTransaction(id: number, note: string): Pro
   return attempt(async () => {
     await apiRequest(`/admin/payments/bank-transactions/${id}/dismiss`, 'POST', { note: note.trim() })
     return true as const
+  })
+}
+
+export async function adminExportPaymentOrdersCsv(f?: { status?: string; q?: string }): Promise<Result<string>> {
+  const params = new URLSearchParams()
+  if (f?.status) params.set('status', f.status)
+  if (f?.q?.trim()) params.set('q', f.q.trim())
+  const qs = params.toString()
+  return attempt(() => apiRequestText(`/admin/payments/orders.csv${qs ? `?${qs}` : ''}`))
+}
+
+export type ReconcileResult = {
+  fetched: number
+  /** Recorded now — their webhook never arrived. */
+  new: number
+  paid: number
+  need_human: number
+  skipped: number
+}
+
+/** Pull SePay's transaction list for the last `days` and record what the webhook missed. */
+export async function adminReconcilePayments(days = 2): Promise<Result<ReconcileResult>> {
+  return attempt(async () => {
+    const data = await apiRequest('/admin/payments/reconcile', 'POST', { days })
+    return data?.result as ReconcileResult
   })
 }

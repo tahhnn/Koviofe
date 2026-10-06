@@ -1136,6 +1136,11 @@
     "dismissPrompt": "Lý do (ví dụ: đã hoàn tiền, không phải thanh toán app):",
     "dismissed": "Đã đánh dấu giao dịch",
     "ledgerEmptyOpen": "Không có giao dịch nào cần xử lý",
-    "ledgerEmpty": "Không có giao dịch"
+    "ledgerEmpty": "Không có giao dịch",
+    "exportCsv": "Xuất CSV",
+    "reconcile": "Đối soát ngay",
+    "reconciling": "Đang đối soát…",
+    "reconcileHint": "Lấy giao dịch 2 ngày gần nhất từ SePay và ghi những giao dịch webhook bị lỡ",
+    "reconcileDone": "Đối soát xong: SePay trả {fetched} giao dịch, vớt {recovered} giao dịch bị lỡ ({paid} đã kích hoạt, {review} cần xử lý)"
   }
 }

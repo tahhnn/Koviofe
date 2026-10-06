@@ -1132,6 +1132,11 @@
     "dismissPrompt": "Reason (e.g. refunded, not an app payment):",
     "dismissed": "Transaction marked handled",
     "ledgerEmptyOpen": "Nothing needs action",
-    "ledgerEmpty": "No transactions"
+    "ledgerEmpty": "No transactions",
+    "exportCsv": "Export CSV",
+    "reconcile": "Reconcile now",
+    "reconciling": "Reconciling…",
+    "reconcileHint": "Fetch the last 2 days of transactions from SePay and record any the webhook missed",
+    "reconcileDone": "Reconciled: SePay returned {fetched}, recovered {recovered} missed ({paid} activated, {review} need action)"
   }
 }

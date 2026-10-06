@@ -9,6 +9,7 @@ import {
   adminAttachBankTransaction,
   adminDismissBankTransaction,
   adminListBankTransactions,
+  adminReconcilePayments,
   type BankTransaction,
 } from '@/app/actions/payment'
 
@@ -38,6 +39,7 @@ export function BankTransactionsPanel({
   const [q, setQ] = useState('')
   const [drafts, setDrafts] = useState<Record<number, Draft>>({})
   const [busy, setBusy] = useState<number | null>(null)
+  const [reconciling, setReconciling] = useState(false)
 
   const load = useCallback(async () => {
     const r = await adminListBankTransactions(filter, q)
@@ -89,6 +91,19 @@ export function BankTransactionsPanel({
     await load()
   }
 
+  const reconcile = async () => {
+    setReconciling(true)
+    const r = await adminReconcilePayments(2)
+    setReconciling(false)
+    if (!r.ok) {
+      onError(r.error)
+      return
+    }
+    onMessage(t('reconcileDone', { fetched: r.data.fetched, recovered: r.data.new, paid: r.data.paid, review: r.data.need_human }))
+    await load()
+    if (r.data.new > 0) onChanged?.()
+  }
+
   const open = (s: string) => s === 'unmatched' || s === 'duplicate_payment'
 
   return (
@@ -122,6 +137,15 @@ export function BankTransactionsPanel({
           className="h-9 rounded-lg text-xs bg-white/10 hover:bg-white/15 text-[#f2f0eb]"
         >
           <RefreshCw className="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          type="button"
+          disabled={reconciling}
+          onClick={reconcile}
+          title={t('reconcileHint')}
+          className="h-9 rounded-lg text-xs bg-white/10 hover:bg-white/15 text-[#f2f0eb]"
+        >
+          {reconciling ? t('reconciling') : t('reconcile')}
         </Button>
       </div>
 
