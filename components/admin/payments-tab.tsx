@@ -5,6 +5,7 @@ import { useFormatter, useTranslations } from 'next-intl'
 import { RefreshCw, Save } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { BankTransactionsPanel } from '@/components/admin/bank-transactions-panel'
 import {
   adminCancelPaymentOrder,
   adminConfirmPaymentOrder,
@@ -43,11 +44,12 @@ export function PaymentsTab({ onChanged }: { onChanged?: () => void }) {
   const [q, setQ] = useState('')
   const [confirming, setConfirming] = useState<Record<string, ConfirmDraft>>({})
 
-  const flash = (m: string) => {
+  const flash = useCallback((m: string) => {
     setMsg(m)
     setErr(null)
     setTimeout(() => setMsg(null), 3000)
-  }
+  }, [])
+  const showError = useCallback((m: string) => setErr(m), [])
 
   const loadOrders = useCallback(async () => {
     const r = await adminListPaymentOrders({ status, q })
@@ -266,6 +268,15 @@ export function PaymentsTab({ onChanged }: { onChanged?: () => void }) {
           </table>
         </div>
       </div>
+
+      <BankTransactionsPanel
+        onChanged={() => {
+          void loadOrders()
+          onChanged?.()
+        }}
+        onError={showError}
+        onMessage={flash}
+      />
 
       {/* Orders */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5 space-y-3">

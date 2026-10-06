@@ -1050,7 +1050,7 @@
     "cancelOrder": "Cancel payment",
     "paidTitle": "Payment received",
     "paidBody": "{name} is now active on your account.",
-    "expiredBody": "This QR code has expired or was cancelled. If you already paid, do not pay again — contact an administrator.",
+    "expiredBody": "This QR code has expired. If you already paid the exact amount with this note, the plan still activates automatically — do not pay again.",
     "reviewBody": "We received a transfer that needs an administrator to check it (wrong amount or late). You will be activated once it is confirmed.",
     "newQr": "New QR code",
     "troubleZalo": "Trouble with the transfer? Contact us on",
@@ -1059,7 +1059,8 @@
     "status_paid": "Paid",
     "status_expired": "Expired",
     "status_cancelled": "Cancelled",
-    "status_needs_review": "Needs review"
+    "status_needs_review": "Needs review",
+    "cancelledBody": "This order was cancelled. If you already paid, do not pay again — an administrator will check and settle it."
   },
   "adminPayments": {
     "checkoutTitle": "QR checkout (SePay)",
@@ -1105,6 +1106,32 @@
     "confirmed": "Order {code} confirmed and plan granted",
     "cancelPrompt": "Reason for cancelling order {code}:",
     "cancelled": "Order {code} cancelled",
-    "noOrders": "No orders"
+    "noOrders": "No orders",
+    "ledgerTitle": "Bank transactions (SePay)",
+    "ledgerHint": "By default only transfers that need a human: no readable order code, or a second payment for an order already paid.",
+    "ledgerSearch": "Content, bank ref, order code",
+    "colTime": "Time",
+    "colContent": "Transfer note",
+    "txn_open": "Needs action",
+    "txn_unmatched": "No matching order",
+    "txn_matched": "Auto-matched",
+    "txn_attached": "Attached by admin",
+    "txn_amount_mismatch": "Wrong amount",
+    "txn_needs_review": "Under review",
+    "txn_duplicate_payment": "Duplicate payment",
+    "txn_ignored": "Ignored",
+    "txn_dismissed": "Not an app payment",
+    "attach": "Attach to order",
+    "attachCode": "Order code (KV...)",
+    "attachNote": "Reason",
+    "attachConfirm": "Attach & settle",
+    "attachFieldsRequired": "Order code and reason are required",
+    "attachedPaid": "Attached and activated order {code}",
+    "attachedReview": "Attached to order {code} — the order needs review",
+    "dismiss": "Mark handled",
+    "dismissPrompt": "Reason (e.g. refunded, not an app payment):",
+    "dismissed": "Transaction marked handled",
+    "ledgerEmptyOpen": "Nothing needs action",
+    "ledgerEmpty": "No transactions"
   }
 }

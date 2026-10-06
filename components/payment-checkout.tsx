@@ -239,7 +239,11 @@ export function PaymentCheckout({
           <div className="flex gap-3">
             <XCircle className="w-5 h-5 text-[#9a9eab] shrink-0" />
             <p className="text-sm text-[#c5c2ba]">
-              {order.status === 'needs_review' ? t('reviewBody') : t('expiredBody')}
+              {order.status === 'needs_review'
+                ? t('reviewBody')
+                : order.status === 'cancelled'
+                  ? t('cancelledBody')
+                  : t('expiredBody')}
             </p>
           </div>
           {order.status !== 'needs_review' && (

@@ -184,3 +184,57 @@ export async function adminSetCheckout(enabled: boolean): Promise<Result<Checkou
     return data
   })
 }
+
+export type BankTransaction = {
+  id: number
+  provider: string
+  provider_txn_id: string
+  gateway: string
+  account_number: string
+  transfer_type: string
+  detected_code?: string
+  amount_vnd: number
+  content: string
+  description?: string
+  reference_code: string
+  transaction_date: string
+  order_code?: string
+  order_id?: number | null
+  match_status: string
+  note?: string
+  created_at: string
+}
+
+/** status: 'open' (needs a human), a match_status, or '' for everything. */
+export async function adminListBankTransactions(status: string, q?: string): Promise<Result<BankTransaction[]>> {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  if (q?.trim()) params.set('q', q.trim())
+  const qs = params.toString()
+  return attempt(async () => {
+    const data = await apiRequest(`/admin/payments/bank-transactions${qs ? `?${qs}` : ''}`)
+    return Array.isArray(data?.transactions) ? data.transactions : []
+  })
+}
+
+export async function adminAttachBankTransaction(
+  id: number,
+  orderCode: string,
+  note: string,
+): Promise<Result<{ status: string; paid: boolean }>> {
+  return attempt(async () => {
+    const data = await apiRequest(`/admin/payments/bank-transactions/${id}/attach`, 'POST', {
+      order_code: orderCode.trim().toUpperCase(),
+      note: note.trim(),
+    })
+    revalidatePath('/admin/license')
+    return { status: String(data?.status ?? ''), paid: !!data?.paid }
+  })
+}
+
+export async function adminDismissBankTransaction(id: number, note: string): Promise<Result<true>> {
+  return attempt(async () => {
+    await apiRequest(`/admin/payments/bank-transactions/${id}/dismiss`, 'POST', { note: note.trim() })
+    return true as const
+  })
+}

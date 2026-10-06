@@ -1054,7 +1054,7 @@
     "cancelOrder": "Huỷ thanh toán",
     "paidTitle": "Thanh toán thành công",
     "paidBody": "Đã kích hoạt {name} cho tài khoản của bạn.",
-    "expiredBody": "Mã QR đã hết hạn hoặc đã huỷ. Nếu bạn đã chuyển tiền, đừng chuyển lại — liên hệ quản trị viên.",
+    "expiredBody": "Mã QR đã hết hạn. Nếu bạn đã chuyển đúng số tiền và nội dung, gói vẫn được kích hoạt tự động — đừng chuyển lại.",
     "reviewBody": "Đã nhận giao dịch nhưng cần quản trị viên kiểm tra (sai số tiền hoặc chuyển trễ). Bạn sẽ được kích hoạt sau khi xác nhận.",
     "newQr": "Tạo mã QR mới",
     "troubleZalo": "Gặp vấn đề khi chuyển khoản? Liên hệ",
@@ -1063,7 +1063,8 @@
     "status_paid": "Đã thanh toán",
     "status_expired": "Hết hạn",
     "status_cancelled": "Đã huỷ",
-    "status_needs_review": "Cần kiểm tra"
+    "status_needs_review": "Cần kiểm tra",
+    "cancelledBody": "Đơn này đã huỷ. Nếu bạn đã lỡ chuyển tiền, đừng chuyển lại — quản trị viên sẽ kiểm tra và xử lý."
   },
   "adminPayments": {
     "checkoutTitle": "Thanh toán QR (SePay)",
@@ -1109,6 +1110,32 @@
     "confirmed": "Đã xác nhận đơn {code} và cấp gói",
     "cancelPrompt": "Lý do huỷ đơn {code}:",
     "cancelled": "Đã huỷ đơn {code}",
-    "noOrders": "Không có đơn nào"
+    "noOrders": "Không có đơn nào",
+    "ledgerTitle": "Giao dịch ngân hàng (SePay)",
+    "ledgerHint": "Mặc định chỉ hiện giao dịch cần xử lý: không đọc được mã đơn, hoặc chuyển trùng cho đơn đã thanh toán.",
+    "ledgerSearch": "Nội dung, mã GD, mã đơn",
+    "colTime": "Thời gian",
+    "colContent": "Nội dung CK",
+    "txn_open": "Cần xử lý",
+    "txn_unmatched": "Không khớp đơn",
+    "txn_matched": "Tự khớp",
+    "txn_attached": "Gán tay",
+    "txn_amount_mismatch": "Sai số tiền",
+    "txn_needs_review": "Chờ kiểm tra",
+    "txn_duplicate_payment": "Chuyển trùng",
+    "txn_ignored": "Bỏ qua",
+    "txn_dismissed": "Không phải thanh toán app",
+    "attach": "Gán vào đơn",
+    "attachCode": "Mã đơn (KV...)",
+    "attachNote": "Lý do gán tay",
+    "attachConfirm": "Gán & xử lý",
+    "attachFieldsRequired": "Cần nhập mã đơn và lý do",
+    "attachedPaid": "Đã gán và kích hoạt đơn {code}",
+    "attachedReview": "Đã gán vào đơn {code} — đơn cần kiểm tra thêm",
+    "dismiss": "Đánh dấu đã xử lý",
+    "dismissPrompt": "Lý do (ví dụ: đã hoàn tiền, không phải thanh toán app):",
+    "dismissed": "Đã đánh dấu giao dịch",
+    "ledgerEmptyOpen": "Không có giao dịch nào cần xử lý",
+    "ledgerEmpty": "Không có giao dịch"
   }
 }
