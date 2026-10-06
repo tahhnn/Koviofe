@@ -116,6 +116,17 @@ function formatDate(iso: string | null | undefined, locale: string) {
   }
 }
 
+// canStack: the user holds a Pro term that has not lapsed, so a new term can
+// be added to it. Matches the backend: an expired-but-unswept row restarts.
+function canStack(s: LicenseSubscriptionRow) {
+  return s.plan_id === 'pro' && !s.expired
+}
+
+function parseVnd(raw?: string) {
+  const n = parseInt((raw || '').replace(/\D/g, ''), 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
 export default function AdminLicensePage() {
   const t = useTranslations('adminLicense')
   const locale = useLocale()
@@ -163,6 +174,12 @@ export default function AdminLicensePage() {
 
   const [drafts, setDrafts] = useState<Record<string, PricingPlan>>({})
   const [durationByUser, setDurationByUser] = useState<Record<number, DurationKey>>({})
+  // Unset means "the default for this row" — ticked whenever there is a live
+  // Pro term to add to, so a paid renewal never silently drops the days left.
+  const [extendByUser, setExtendByUser] = useState<Record<number, boolean>>({})
+  // Payment taken outside the app (Zalo, transfer, cash), recorded with the
+  // grant so it shows up in History / reconciliation.
+  const [saleByUser, setSaleByUser] = useState<Record<number, { amount: string; ref: string }>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -367,18 +384,54 @@ export default function AdminLicensePage() {
     }
   }
 
-  const grantPro = async (userId: number) => {
+  const extendFor = (s: LicenseSubscriptionRow) =>
+    canStack(s) && (extendByUser[s.user_id] ?? true)
+
+  // What the grant will write, computed the way the API does (computeTerm), so
+  // the admin sees the end date before committing rather than after.
+  const previewEnd = (s: LicenseSubscriptionRow, dur: DurationKey) => {
+    if (dur === 'lifetime') return t('noExpiry')
+    const days = parseInt(dur, 10)
+    if (extendFor(s)) {
+      if (s.lifetime || !s.ends_at) return t('keepsLifetime')
+      const base = new Date(s.ends_at)
+      base.setDate(base.getDate() + days)
+      return formatDate(base.toISOString(), locale)
+    }
+    const end = new Date()
+    end.setDate(end.getDate() + days)
+    return formatDate(end.toISOString(), locale)
+  }
+
+  const grantPro = async (s: LicenseSubscriptionRow) => {
+    const userId = s.user_id
+    const sale = saleByUser[userId]
+    const amountVnd = parseVnd(sale?.amount)
+    const externalRef = sale?.ref.trim() || ''
+    // Mirrors the API rule: an amount nobody can find on a statement is not
+    // reconcilable, so it is refused before the request rather than after.
+    if (amountVnd > 0 && !externalRef) {
+      setErr(t('saleRefRequired'))
+      return
+    }
     setBusyKey(`pro-${userId}`)
     try {
       const dur = durationByUser[userId] || '30'
+      const payment = { amountVnd, externalRef }
       if (dur === 'lifetime') {
-        await adminAssignPlan({ userId, planId: 'pro', lifetime: true })
+        await adminAssignPlan({ userId, planId: 'pro', lifetime: true, ...payment })
         flash(t('grantedLifetime', { user: userId }))
       } else {
         const days = parseInt(dur, 10)
-        await adminAssignPlan({ userId, planId: 'pro', endsAtDays: days })
+        const extend = extendFor(s)
+        await adminAssignPlan({ userId, planId: 'pro', endsAtDays: days, extend, ...payment })
         flash(t('grantedDays', { days, user: userId }))
       }
+      setSaleByUser((prev) => {
+        const next = { ...prev }
+        delete next[userId]
+        return next
+      })
       await load()
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : t('assignFailed'))
@@ -751,7 +804,7 @@ export default function AdminLicensePage() {
                                 <div className="flex gap-2">
                                   <Button
                                     disabled={busyKey === `pro-${s.user_id}`}
-                                    onClick={() => grantPro(s.user_id)}
+                                    onClick={() => grantPro(s)}
                                     className="flex-1 h-9 rounded-lg text-xs font-bold bg-[#e85d4c]/90 hover:bg-[#e85d4c] text-white border-none"
                                   >
                                     {t('grantPro')}
@@ -765,6 +818,64 @@ export default function AdminLicensePage() {
                                     {t('revokePro')}
                                   </Button>
                                 </div>
+                                {canStack(s) && (durationByUser[s.user_id] || '30') !== 'lifetime' && (
+                                  <label className="flex items-center gap-2 text-xs text-[#c5c2ba]">
+                                    <input
+                                      type="checkbox"
+                                      checked={extendFor(s)}
+                                      onChange={(e) =>
+                                        setExtendByUser((prev) => ({ ...prev, [s.user_id]: e.target.checked }))
+                                      }
+                                      className="h-4 w-4 accent-[#e85d4c]"
+                                    />
+                                    {t('extendTerm')}
+                                  </label>
+                                )}
+                                <div className="text-xs text-[#9a9eab]">
+                                  {t('newEndDate', { date: previewEnd(s, durationByUser[s.user_id] || '30') })}
+                                  {canStack(s) &&
+                                    !extendFor(s) &&
+                                    !s.lifetime &&
+                                    (durationByUser[s.user_id] || '30') !== 'lifetime' &&
+                                    (s.days_remaining ?? 0) > 0 && (
+                                      <div className="text-amber-400">
+                                        {t('losesDays', { n: s.days_remaining ?? 0 })}
+                                      </div>
+                                    )}
+                                </div>
+                                <details className="text-xs" open={!!saleByUser[s.user_id]}>
+                                  <summary className="cursor-pointer text-[#9a9eab] hover:text-[#f2f0eb]">
+                                    {t('saleToggle')}
+                                  </summary>
+                                  <div className="mt-2 flex flex-col gap-2">
+                                    <Input
+                                      inputMode="numeric"
+                                      placeholder={t('saleAmount')}
+                                      aria-label={t('saleAmount')}
+                                      value={saleByUser[s.user_id]?.amount ?? ''}
+                                      onChange={(e) =>
+                                        setSaleByUser((prev) => ({
+                                          ...prev,
+                                          [s.user_id]: { amount: e.target.value, ref: prev[s.user_id]?.ref ?? '' },
+                                        }))
+                                      }
+                                      className="h-9 bg-black/40 border-white/10 text-xs"
+                                    />
+                                    <Input
+                                      placeholder={t('saleRef')}
+                                      aria-label={t('saleRef')}
+                                      maxLength={120}
+                                      value={saleByUser[s.user_id]?.ref ?? ''}
+                                      onChange={(e) =>
+                                        setSaleByUser((prev) => ({
+                                          ...prev,
+                                          [s.user_id]: { amount: prev[s.user_id]?.amount ?? '', ref: e.target.value },
+                                        }))
+                                      }
+                                      className="h-9 bg-black/40 border-white/10 text-xs"
+                                    />
+                                  </div>
+                                </details>
                               </div>
                             </td>
                           </tr>

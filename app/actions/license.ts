@@ -81,6 +81,8 @@ export type AssignPlanInput = {
   note?: string
   /** Honored only when planId is 'free': ends the user's live games too. */
   closeRooms?: boolean
+  /** Add the term to the unexpired remainder of the same plan instead of restarting it. */
+  extend?: boolean
 }
 
 export async function listPricingPlans(): Promise<PricingPlan[]> {
@@ -135,6 +137,7 @@ export async function adminAssignPlan(input: AssignPlanInput) {
   if (input.externalRef?.trim()) body.external_ref = input.externalRef.trim()
   if (input.note?.trim()) body.note = input.note.trim()
   if (input.closeRooms) body.close_rooms = true
+  if (input.extend) body.extend = true
   const data = await apiRequest('/admin/license/assign', 'POST', body)
   revalidatePath('/admin/license')
   revalidatePath('/profile/settings')
