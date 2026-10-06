@@ -32,6 +32,7 @@ import {
 } from '@/app/actions/license'
 import { Ban, Copy, Download, KeyRound, Mail, RefreshCw, Save, Undo2 } from 'lucide-react'
 import { isPaidPlan } from '@/lib/license'
+import { PaymentsTab } from '@/components/admin/payments-tab'
 
 type DurationKey = '30' | '90' | '365' | 'lifetime'
 
@@ -131,7 +132,7 @@ export default function AdminLicensePage() {
   const t = useTranslations('adminLicense')
   const locale = useLocale()
   const router = useRouter()
-  const [tab, setTab] = useState<'subscriptions' | 'plans' | 'codes' | 'history'>('subscriptions')
+  const [tab, setTab] = useState<'subscriptions' | 'plans' | 'codes' | 'history' | 'payments'>('subscriptions')
 
   const [codes, setCodes] = useState<LicenseCode[]>([])
   const [codeFilter, setCodeFilter] = useState<'' | 'available' | 'used' | 'revoked'>('')
@@ -671,6 +672,7 @@ export default function AdminLicensePage() {
                 ['subscriptions', t('tabSubscriptions')],
                 ['codes', t('tabCodes')],
                 ['history', t('tabHistory')],
+                ['payments', t('tabPayments')],
                 ['plans', t('tabPlans')],
               ] as const
             ).map(([id, label]) => (
@@ -894,6 +896,8 @@ export default function AdminLicensePage() {
               )}
             </section>
           )}
+
+          {tab === 'payments' && <PaymentsTab onChanged={() => void load()} />}
 
           {tab === 'plans' && (
             <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">

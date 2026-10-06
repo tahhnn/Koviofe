@@ -32,6 +32,13 @@ export function LicenseExpiringBanner({
 
       <LicenseRedeem onRedeemed={onRedeemed} />
 
+      <Link
+        href="/pricing"
+        className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-[#e85d4c] hover:bg-[#e85d4c]/90 text-white text-sm font-bold"
+      >
+        {t('buyPlan')}
+      </Link>
+
       <p className="text-xs text-[#9a9eab]">
         {t('detailsHint')}{' '}
         <Link href="/profile/settings" className="underline hover:text-[#f2f0eb]">
