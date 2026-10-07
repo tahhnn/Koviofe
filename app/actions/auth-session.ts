@@ -48,7 +48,7 @@ export async function changePasswordAction(oldPassword: string, newPassword: str
   const cookieStore = await cookies()
   const token = cookieStore.get('token')?.value
   if (!token) {
-    return { error: { message: 'Unauthorized' } }
+    return { error: { message: 'Unauthorized' as string | undefined } }
   }
 
   const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8082/api'
@@ -67,6 +67,7 @@ export async function changePasswordAction(oldPassword: string, newPassword: str
     }
     return { data }
   } catch (err: unknown) {
-    return { error: { message: err instanceof Error ? err.message : 'Network error' } }
+    console.error('change-password request failed', err)
+    return { error: { message: undefined } }
   }
 }

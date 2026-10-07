@@ -18,7 +18,8 @@
     "retry": "Thử lại",
     "copy": "Sao chép",
     "copied": "Đã sao chép",
-    "accountMenu": "Menu tài khoản"
+    "accountMenu": "Menu tài khoản",
+    "unexpectedError": "Có lỗi xảy ra, vui lòng thử lại."
   },
   "nav": {
     "signIn": "Đăng nhập",

@@ -14,6 +14,7 @@ import { LanguageSwitcher } from '@/components/language-switcher'
 
 export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const t = useTranslations('auth')
+  const tCommon = useTranslations('common')
   const router = useRouter()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -35,7 +36,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     setLoading(false)
 
     if (result.error) {
-      setError(result.error.message ?? 'Something went wrong')
+      setError(result.error.message ?? tCommon('unexpectedError'))
       return
     }
 

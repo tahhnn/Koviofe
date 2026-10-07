@@ -2,6 +2,13 @@
 
 import { apiRequest } from '@/services/api/client'
 import { revalidatePath } from 'next/cache'
+import { getTranslations } from 'next-intl/server'
+import { publicErrorMessage } from '@/lib/api-errors'
+
+async function failure(error: unknown) {
+  const t = await getTranslations('common')
+  return { success: false as const, error: publicErrorMessage(error, t('unexpectedError')) }
+}
 
 export type QuestionBankPack = {
   id: number
@@ -80,8 +87,8 @@ export async function saveQuizToQuestionBank(
     revalidatePath('/templates')
     revalidatePath('/dashboard')
     return { success: true as const, pack: res as QuestionBankPack }
-  } catch (error: any) {
-    return { success: false as const, error: error.message as string }
+  } catch (error) {
+    return failure(error)
   }
 }
 
@@ -97,8 +104,8 @@ export async function updateQuestionBankMeta(
     })
     revalidatePath('/templates')
     return { success: true as const, pack: res }
-  } catch (error: any) {
-    return { success: false as const, error: error.message as string }
+  } catch (error) {
+    return failure(error)
   }
 }
 
@@ -113,8 +120,8 @@ export async function deleteQuestionBank(packId: string | number) {
     revalidatePath('/templates')
     revalidatePath('/dashboard')
     return { success: true as const }
-  } catch (error: any) {
-    return { success: false as const, error: error.message as string }
+  } catch (error) {
+    return failure(error)
   }
 }
 
@@ -132,8 +139,8 @@ export async function createQuizFromQuestionBank(packId: string | number, title?
     revalidatePath('/dashboard')
     revalidatePath('/quizzes')
     return { success: true as const, quizId: String(res.quiz_id) }
-  } catch (error: any) {
-    return { success: false as const, error: error.message as string }
+  } catch (error) {
+    return failure(error)
   }
 }
 
@@ -160,8 +167,8 @@ export async function importBankQuestionsToQuiz(
       imported: res.imported as number,
       totalAfter: res.total_after as number,
     }
-  } catch (error: any) {
-    return { success: false as const, error: error.message as string }
+  } catch (error) {
+    return failure(error)
   }
 }
 
@@ -175,7 +182,7 @@ export async function createTemplateAction(title: string, description: string, q
     })
     revalidatePath('/templates')
     return { success: true as const, template: res }
-  } catch (error: any) {
-    return { success: false as const, error: error.message as string }
+  } catch (error) {
+    return failure(error)
   }
 }

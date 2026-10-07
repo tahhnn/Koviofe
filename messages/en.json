@@ -18,7 +18,8 @@
     "retry": "Retry",
     "copy": "Copy",
     "copied": "Copied",
-    "accountMenu": "Account menu"
+    "accountMenu": "Account menu",
+    "unexpectedError": "Something went wrong. Please try again."
   },
   "nav": {
     "signIn": "Sign in",

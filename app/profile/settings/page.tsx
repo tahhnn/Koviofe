@@ -99,7 +99,7 @@ export default function ProfileSettingsPage() {
     setLoading(false)
 
     if (result.error) {
-      setError(result.error.message ?? 'Failed to change password')
+      setError(result.error.message ?? tCommon('unexpectedError'))
       return
     }
 
