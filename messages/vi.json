@@ -1045,6 +1045,7 @@
     "close": "Đóng",
     "creating": "Đang tạo mã thanh toán…",
     "qrAlt": "Mã QR chuyển khoản",
+    "qrUnavailable": "Không tải được mã QR. Vui lòng chuyển khoản theo thông tin bên cạnh.",
     "bank": "Ngân hàng",
     "account": "Số tài khoản",
     "holder": "Chủ tài khoản",
