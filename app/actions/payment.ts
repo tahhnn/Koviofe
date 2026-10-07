@@ -1,6 +1,8 @@
 'use server'
 
 import { apiRequest, apiRequestText } from '@/services/api/client'
+import { getTranslations } from 'next-intl/server'
+import { publicErrorMessage } from '@/lib/api-errors'
 import { revalidatePath } from 'next/cache'
 
 export type PaymentProduct = {
@@ -69,7 +71,8 @@ async function attempt<T>(fn: () => Promise<T>): Promise<Result<T>> {
   try {
     return { ok: true, data: await fn() }
   } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Request failed' }
+    const t = await getTranslations('common')
+    return { ok: false, error: publicErrorMessage(e, t('unexpectedError')) }
   }
 }
 

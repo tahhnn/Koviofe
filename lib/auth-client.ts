@@ -1,5 +1,7 @@
 'use client'
 
+import { isStaleDeploymentError } from '@/lib/api-errors'
+
 
 
 const getApiUrl = () => {
@@ -11,6 +13,18 @@ const getApiUrl = () => {
 }
 
 const API_URL = getApiUrl()
+
+// A tab opened before a frontend deploy still holds the old build's server
+// action IDs, so calling one throws "Server Action ... was not found on the
+// server". Reload to pick up the new build; never show raw exception text
+// (framework internals) to the user — the form falls back to a generic message.
+function unexpectedError(err: unknown) {
+  console.error(err)
+  if (isStaleDeploymentError(err)) {
+    window.location.reload()
+  }
+  return { error: { message: undefined as string | undefined } }
+}
 
 export const authClient = {
   signIn: {
@@ -31,8 +45,8 @@ export const authClient = {
         localStorage.setItem('user', JSON.stringify(data.user))
 
         return { data }
-      } catch (err: any) {
-        return { error: { message: err.message || 'Network error' } }
+      } catch (err) {
+        return unexpectedError(err)
       }
     }
   },
@@ -49,8 +63,8 @@ export const authClient = {
           return { error: { message: data.error || 'Registration failed' } }
         }
         return { data }
-      } catch (err: any) {
-        return { error: { message: err.message || 'Network error' } }
+      } catch (err) {
+        return unexpectedError(err)
       }
     }
   },
@@ -71,13 +85,17 @@ export const authClient = {
       localStorage.setItem('user', JSON.stringify(data.user))
 
       return { data }
-    } catch (err: any) {
-      return { error: { message: err.message || 'Network error' } }
+    } catch (err) {
+      return unexpectedError(err)
     }
   },
   changePassword: async ({ oldPassword, newPassword }: { oldPassword: string; newPassword: string }) => {
-    const { changePasswordAction } = await import('@/app/actions/auth-session')
-    return changePasswordAction(oldPassword, newPassword)
+    try {
+      const { changePasswordAction } = await import('@/app/actions/auth-session')
+      return await changePasswordAction(oldPassword, newPassword)
+    } catch (err) {
+      return unexpectedError(err)
+    }
   },
   signOut: async () => {
     try {

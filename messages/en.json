@@ -18,7 +18,8 @@
     "retry": "Retry",
     "copy": "Copy",
     "copied": "Copied",
-    "accountMenu": "Account menu"
+    "accountMenu": "Account menu",
+    "unexpectedError": "Something went wrong. Please try again."
   },
   "nav": {
     "signIn": "Sign in",
@@ -1040,6 +1041,7 @@
     "close": "Close",
     "creating": "Creating payment code…",
     "qrAlt": "Bank transfer QR code",
+    "qrUnavailable": "The QR code could not be loaded. Please transfer using the details alongside.",
     "bank": "Bank",
     "account": "Account number",
     "holder": "Account holder",

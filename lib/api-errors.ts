@@ -63,6 +63,33 @@ export function isStaleDeploymentError(raw: unknown): boolean {
   return STALE_DEPLOYMENT_PATTERN.test(normalizeErrorMessage(raw))
 }
 
+// Text that describes how the request failed, not why the user can't do what
+// they asked: browser/Node network errors, a non-JSON body (an nginx 502
+// page), a JS crash, Next's production redaction of a thrown Server Action
+// error. None of it is the user's to read — and some of it names internal
+// paths — so it is never shown; the backend's own `error` sentences are.
+const INTERNAL_ERROR_PATTERN =
+  /an error occurred in the server components render|digest property is included|omitted in production builds|failed to fetch|fetch failed|networkerror|load failed|network request failed|unexpected token|unexpected end of json|invalid json response|is not a function|is not defined|cannot read propert|of undefined|of null|request failed with status|econnrefused|econnreset|etimedout|enotfound|socket hang up|operation was aborted|<html|<!doctype|^unknown error$/i
+
+const INTERNAL_ERROR_NAMES = new Set(['TypeError', 'SyntaxError', 'RangeError', 'ReferenceError', 'AbortError'])
+
+export function isInternalError(raw: unknown): boolean {
+  if (raw instanceof Error && INTERNAL_ERROR_NAMES.has(raw.name)) return true
+  const msg = normalizeErrorMessage(raw)
+  return INTERNAL_ERROR_PATTERN.test(msg) || STALE_DEPLOYMENT_PATTERN.test(msg)
+}
+
+/** For call sites that show an error's text directly (a form line, a toast,
+ *  a Server Action's `{ error }` result): the API's sentence when there is
+ *  one, otherwise `fallback`. The raw error still goes to the console/log. */
+export function publicErrorMessage(raw: unknown, fallback: string): string {
+  if (isInternalError(raw)) {
+    console.error(raw)
+    return fallback
+  }
+  return normalizeErrorMessage(raw)
+}
+
 const rules: ErrorRule[] = [
   {
     // Next.js replaces any error thrown out of a Server Action with this
@@ -71,8 +98,10 @@ const rules: ErrorRule[] = [
     // loading the next question) now return their failure as data instead of
     // throwing; this rule is the floor for everything else, so the worst a
     // user sees is a sentence they can act on.
-    test: (m) =>
-      /an error occurred in the server components render|digest property is included|omitted in production builds/i.test(m),
+    // Network failures, non-JSON bodies and JS crashes land here too — see
+    // INTERNAL_ERROR_PATTERN. Before, they fell through to the generic card,
+    // which quoted the raw text back as the "reason".
+    test: (m) => !STALE_DEPLOYMENT_PATTERN.test(m) && INTERNAL_ERROR_PATTERN.test(m),
     resolve: () => ({
       titleKey: 'serverErrorTitle',
       descriptionKey: 'serverErrorBody',
@@ -255,6 +284,10 @@ export function isAuthError(raw: unknown): boolean {
 
 export function resolveApiError(raw: unknown): ResolvedApiError {
   const normalized = normalizeErrorMessage(raw)
+
+  if (isInternalError(raw) && !STALE_DEPLOYMENT_PATTERN.test(normalized)) {
+    return rules[0].resolve(normalized)
+  }
 
   for (const rule of rules) {
     if (rule.test(normalized)) {

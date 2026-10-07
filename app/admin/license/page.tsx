@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { downloadCsv } from '@/lib/audit-labels'
+import { publicErrorMessage } from '@/lib/api-errors'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -230,7 +231,7 @@ export default function AdminLicensePage() {
         })
       )
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('loadCodesFailed'))
+      setErr(publicErrorMessage(e, t('loadCodesFailed')))
     }
   }, [codeFilter, codeSearch])
 
@@ -262,7 +263,7 @@ export default function AdminLicensePage() {
       await loadCodes()
       flash(t('mintedCount', { count: minted.length }))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('mintFailed'))
+      setErr(publicErrorMessage(e, t('mintFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -279,7 +280,7 @@ export default function AdminLicensePage() {
       setEvents(res.events)
       setSummary(res.summary)
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('loadHistoryFailed'))
+      setErr(publicErrorMessage(e, t('loadHistoryFailed')))
     }
   }, [histFrom, histTo, histEmail, histAction])
 
@@ -305,7 +306,7 @@ export default function AdminLicensePage() {
       downloadCsv(csv, `license-history-${new Date().toISOString().slice(0, 10)}.csv`)
       flash(t('csvDownloaded'))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('csvFailed'))
+      setErr(publicErrorMessage(e, t('csvFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -325,7 +326,7 @@ export default function AdminLicensePage() {
       setSendEmail('')
       setSendName('')
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('emailFailed'))
+      setErr(publicErrorMessage(e, t('emailFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -338,7 +339,7 @@ export default function AdminLicensePage() {
       await loadCodes()
       flash(t('revokedCode', { code }))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('revokeFailed'))
+      setErr(publicErrorMessage(e, t('revokeFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -379,7 +380,7 @@ export default function AdminLicensePage() {
       flash(t('planSaved', { plan: planId }))
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('saveFailed'))
+      setErr(publicErrorMessage(e, t('saveFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -435,7 +436,7 @@ export default function AdminLicensePage() {
       })
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('assignFailed'))
+      setErr(publicErrorMessage(e, t('assignFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -457,7 +458,7 @@ export default function AdminLicensePage() {
       await loadCodes()
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('clawBackFailed'))
+      setErr(publicErrorMessage(e, t('clawBackFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -476,7 +477,7 @@ export default function AdminLicensePage() {
       flash(t('revokedToFree', { label }))
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('revokeFailed'))
+      setErr(publicErrorMessage(e, t('revokeFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -500,7 +501,7 @@ export default function AdminLicensePage() {
       flash(t(next ? 'enforcementTurnedOn' : 'enforcementTurnedOff'))
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('enforcementFailed'))
+      setErr(publicErrorMessage(e, t('enforcementFailed')))
       // The 409 body does not survive the throw, so re-read to show which
       // checks are actually failing right now.
       const st = await adminGetEnforcement()

@@ -18,7 +18,8 @@
     "retry": "Thử lại",
     "copy": "Sao chép",
     "copied": "Đã sao chép",
-    "accountMenu": "Menu tài khoản"
+    "accountMenu": "Menu tài khoản",
+    "unexpectedError": "Có lỗi xảy ra, vui lòng thử lại."
   },
   "nav": {
     "signIn": "Đăng nhập",
@@ -1044,6 +1045,7 @@
     "close": "Đóng",
     "creating": "Đang tạo mã thanh toán…",
     "qrAlt": "Mã QR chuyển khoản",
+    "qrUnavailable": "Không tải được mã QR. Vui lòng chuyển khoản theo thông tin bên cạnh.",
     "bank": "Ngân hàng",
     "account": "Số tài khoản",
     "holder": "Chủ tài khoản",

@@ -13,6 +13,7 @@ import { GameBackground } from '@/components/game-background'
 
 function VerifyOTPContent() {
   const t = useTranslations('verify')
+  const tCommon = useTranslations('common')
   const router = useRouter()
   const searchParams = useSearchParams()
   const emailParam = searchParams.get('email') || ''
@@ -40,7 +41,7 @@ function VerifyOTPContent() {
     setLoading(false)
 
     if (result.error) {
-      setError(result.error.message ?? 'Verification failed')
+      setError(result.error.message ?? tCommon('unexpectedError'))
       return
     }
 
