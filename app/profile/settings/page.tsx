@@ -17,6 +17,7 @@ import {
   type PricingPlan,
 } from '@/app/actions/license'
 import { LicenseRedeem } from '@/components/license-redeem'
+import { listMyPaymentOrders, type PaymentOrder } from '@/app/actions/payment'
 import { isLicenseExpiringSoon, isLicenseLocked } from '@/lib/license'
 
 function formatLimit(n: number) {
@@ -49,6 +50,8 @@ export default function ProfileSettingsPage() {
   const format = useFormatter()
   const tLicense = useTranslations('license')
   const tCommon = useTranslations('common')
+  const tPay = useTranslations('payment')
+  const [orders, setOrders] = useState<PaymentOrder[]>([])
   const router = useRouter()
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -67,9 +70,16 @@ export default function ProfileSettingsPage() {
       setPlanLoading(true)
       const session = await authClient.getSession()
       setIsAdmin(session?.user?.role === 'admin')
-      const [me, catalog] = await Promise.all([getMyLicense(), listPricingPlans()])
+      const [me, catalog, myOrders] = await Promise.all([
+        getMyLicense(),
+        listPricingPlans(),
+        listMyPaymentOrders(),
+      ])
       setLicense(me)
       setPlans(catalog)
+      // Abandoned checkouts are noise in a purchase history; keep what paid
+      // or what an admin is still looking at.
+      setOrders(myOrders.filter((o) => o.status === 'paid' || o.status === 'needs_review').slice(0, 10))
       setPlanLoading(false)
     })()
   }, [])
@@ -167,6 +177,30 @@ export default function ProfileSettingsPage() {
                     setLicense(await getMyLicense())
                   }}
                 />
+                <Link
+                  href="/pricing"
+                  className="inline-flex items-center justify-center h-9 px-4 rounded-xl bg-[#e85d4c] hover:bg-[#e85d4c]/90 text-white text-xs font-bold"
+                >
+                  {tLicense('buyPlan')}
+                </Link>
+              </div>
+            )}
+
+            {!planLoading && orders.length > 0 && (
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-4 mb-6">
+                <h2 className="text-sm font-semibold text-[#f2f0eb] mb-2">{tPay('historyTitle')}</h2>
+                <ul className="divide-y divide-white/5 text-xs">
+                  {orders.map((o) => (
+                    <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                      <span className="font-mono text-[#c5c2ba]">{o.order_code}</span>
+                      <span className="text-[#9a9eab]">{o.product_name}</span>
+                      <span className="text-[#f2f0eb]">{format.number(o.amount_vnd)}đ</span>
+                      <span className={o.status === 'paid' ? 'text-emerald-400' : 'text-[#9a9eab]'}>
+                        {tPay(`status_${o.status}`)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
