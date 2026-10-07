@@ -5,6 +5,7 @@ import { useFormatter, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Check, CheckCircle2, Clock, Copy, Loader2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { PurchasedCode } from '@/components/purchased-code'
 import {
   cancelPaymentOrder,
   createPaymentOrder,
@@ -234,12 +235,21 @@ export function PaymentCheckout({
       )}
 
       {order?.status === 'paid' && (
-        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 flex gap-3">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <div>
-            <p className="font-semibold text-[#f2f0eb]">{t('paidTitle')}</p>
-            <p className="text-sm text-[#9a9eab]">{t('paidBody', { name: order.product_name })}</p>
+        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 space-y-3">
+          <div className="flex gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <p className="font-semibold text-[#f2f0eb]">{t('paidTitle')}</p>
+              <p className="text-sm text-[#9a9eab]">{t('paidBody', { name: order.product_name })}</p>
+            </div>
           </div>
+          {order.license_code && (
+            <PurchasedCode
+              code={order.license_code}
+              used={!!order.code_used}
+              usedByMe={!!order.redeemed_by_me}
+            />
+          )}
         </div>
       )}
 

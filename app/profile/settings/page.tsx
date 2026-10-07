@@ -17,7 +17,13 @@ import {
   type PricingPlan,
 } from '@/app/actions/license'
 import { LicenseRedeem } from '@/components/license-redeem'
-import { listMyPaymentOrders, type PaymentOrder } from '@/app/actions/payment'
+import {
+  listMyPaymentOrders,
+  listPaymentProducts,
+  type PaymentOrder,
+  type PaymentProduct,
+} from '@/app/actions/payment'
+import { PurchasedCode } from '@/components/purchased-code'
 import { isLicenseExpiringSoon, isLicenseLocked } from '@/lib/license'
 
 function formatLimit(n: number) {
@@ -52,6 +58,18 @@ export default function ProfileSettingsPage() {
   const tCommon = useTranslations('common')
   const tPay = useTranslations('payment')
   const [orders, setOrders] = useState<PaymentOrder[]>([])
+  // The price list is the only place prices live; the plan card shows the
+  // cheapest term on sale for its plan instead of a separately typed price.
+  const [products, setProducts] = useState<PaymentProduct[]>([])
+  const reloadOrders = async () => {
+    const [me, myOrders] = await Promise.all([getMyLicense(), listMyPaymentOrders()])
+    setLicense(me)
+    setOrders(myOrders.filter((o) => o.status === 'paid' || o.status === 'needs_review').slice(0, 10))
+  }
+  const fromPrice = (planId: string): number | null => {
+    const prices = products.filter((x) => x.plan_id === planId).map((x) => x.amount_vnd)
+    return prices.length ? Math.min(...prices) : null
+  }
   const router = useRouter()
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -63,20 +81,19 @@ export default function ProfileSettingsPage() {
   const [license, setLicense] = useState<LicenseSnapshot | null>(null)
   const [plans, setPlans] = useState<PricingPlan[]>([])
   const [planLoading, setPlanLoading] = useState(true)
-  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     ;(async () => {
       setPlanLoading(true)
-      const session = await authClient.getSession()
-      setIsAdmin(session?.user?.role === 'admin')
-      const [me, catalog, myOrders] = await Promise.all([
+      const [me, catalog, myOrders, priceList] = await Promise.all([
         getMyLicense(),
         listPricingPlans(),
         listMyPaymentOrders(),
+        listPaymentProducts(),
       ])
       setLicense(me)
       setPlans(catalog)
+      setProducts(priceList.products)
       // Abandoned checkouts are noise in a purchase history; keep what paid
       // or what an admin is still looking at.
       setOrders(myOrders.filter((o) => o.status === 'paid' || o.status === 'needs_review').slice(0, 10))
@@ -191,13 +208,23 @@ export default function ProfileSettingsPage() {
                 <h2 className="text-sm font-semibold text-[#f2f0eb] mb-2">{tPay('historyTitle')}</h2>
                 <ul className="divide-y divide-white/5 text-xs">
                   {orders.map((o) => (
-                    <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                      <span className="font-mono text-[#c5c2ba]">{o.order_code}</span>
-                      <span className="text-[#9a9eab]">{o.product_name}</span>
-                      <span className="text-[#f2f0eb]">{format.number(o.amount_vnd)}đ</span>
-                      <span className={o.status === 'paid' ? 'text-emerald-400' : 'text-[#9a9eab]'}>
-                        {tPay(`status_${o.status}`)}
-                      </span>
+                    <li key={o.id} className="py-2 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-mono text-[#c5c2ba]">{o.order_code}</span>
+                        <span className="text-[#9a9eab]">{o.product_name}</span>
+                        <span className="text-[#f2f0eb]">{format.number(o.amount_vnd)}đ</span>
+                        <span className={o.status === 'paid' ? 'text-emerald-400' : 'text-[#9a9eab]'}>
+                          {tPay(`status_${o.status}`)}
+                        </span>
+                      </div>
+                      {o.license_code && (
+                        <PurchasedCode
+                          code={o.license_code}
+                          used={!!o.code_used}
+                          usedByMe={!!o.redeemed_by_me}
+                          onRedeemed={reloadOrders}
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -253,11 +280,11 @@ export default function ProfileSettingsPage() {
                   >
                     <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                       <h3 className="text-lg font-black text-[#f2f0eb]">{p.name}</h3>
-                      <span className="text-sm font-bold text-[#c5c2ba] whitespace-nowrap">
-                        {p.price_monthly_vnd === 0
-                          ? t('free')
-                          : t('pricePerMonth', { price: format.number(p.price_monthly_vnd) })}
-                      </span>
+                      {fromPrice(p.id) !== null && (
+                        <span className="text-sm font-bold text-[#c5c2ba] whitespace-nowrap">
+                          {t('priceFrom', { price: format.number(fromPrice(p.id) as number) })}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-[#9a9eab] leading-relaxed">{p.description}</p>
                     <ul className="text-xs text-[#c5c2ba] space-y-1.5">
@@ -272,29 +299,29 @@ export default function ProfileSettingsPage() {
                       <li>• {t('concurrentRooms', { count: formatLimit(p.max_concurrent_rooms) })}</li>
                       {isPro && <li className="text-[#e85d4c]">• {t('proExtras')}</li>}
                     </ul>
-                    <div
-                      className={`w-full min-h-11 h-auto py-2.5 leading-snug text-center rounded-xl flex items-center justify-center text-sm font-bold ${
-                        isCurrent
-                          ? 'bg-[#e85d4c]/20 text-[#e85d4c]'
-                          : 'bg-white/5 text-[#9a9eab]'
-                      }`}
-                    >
-                      {isCurrent ? t('inUse') : t('contactAdmin')}
-                    </div>
+                    {isCurrent && (
+                      <div className="w-full min-h-11 h-auto py-2.5 leading-snug text-center rounded-xl flex items-center justify-center text-sm font-bold bg-[#e85d4c]/20 text-[#e85d4c]">
+                        {t('inUse')}
+                      </div>
+                    )}
+                    {fromPrice(p.id) !== null && (
+                      <Link
+                        href="/pricing"
+                        className="w-full min-h-11 h-auto py-2.5 leading-snug text-center rounded-xl flex items-center justify-center text-sm font-bold bg-[#e85d4c] hover:bg-[#e85d4c]/90 text-white"
+                      >
+                        {isCurrent ? t('renewPlan') : t('buyPlan')}
+                      </Link>
+                    )}
                   </div>
                 )
               })}
             </div>
 
             <p className="mt-4 text-[11px] text-center text-[#9a9eab]">
-              {t('adminManagedNote')}{' '}
-              {isAdmin ? (
-                <Link href="/admin" className="text-[#e85d4c] underline underline-offset-2">
-                  /admin
-                </Link>
-              ) : (
-                <span className="text-[#c5c2ba]">/admin</span>
-              )}
+              {t('buyNote')}{' '}
+              <Link href="/pricing" className="text-[#e85d4c] underline underline-offset-2">
+                {t('pricingLink')}
+              </Link>
               .
             </p>
           </Card>

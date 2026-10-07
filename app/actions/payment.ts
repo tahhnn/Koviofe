@@ -41,6 +41,11 @@ export type PaymentOrder = {
   external_ref?: string
   confirmed_by?: number | null
   note?: string
+  /** The activation code this payment bought; set once the order is paid. */
+  license_code?: string
+  /** Buyer views only: whether the code was used, and whether on this account. */
+  code_used?: boolean
+  redeemed_by_me?: boolean
   created_at: string
 }
 
@@ -55,7 +60,13 @@ export type CheckoutInfo = {
 /** checkout is present only while the order is pending. */
 export type OrderView = { order: PaymentOrder; checkout?: CheckoutInfo }
 
-export type AdminOrderRow = PaymentOrder & { email: string }
+export type AdminOrderRow = PaymentOrder & {
+  email: string
+  code_used: boolean
+  /** May differ from email: a buyer can activate the code on another account. */
+  redeemed_by?: string
+  redeemed_at?: string | null
+}
 
 export type CheckoutState = { enabled: boolean; configured: boolean; effective: boolean }
 

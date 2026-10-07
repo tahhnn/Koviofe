@@ -185,7 +185,7 @@
   },
   "settings": {
     "planSection": "Subscription plan",
-    "planSubtitle": "See your current limits and benefits. Enter an activation code to upgrade.",
+    "planSubtitle": "See your current limits and features. Buy a plan to get an activation code, then enter it to activate.",
     "currentPlan": "Current plan",
     "planLoading": "Loading plan…",
     "questionsPerQuiz": "Questions / quiz:",
@@ -193,7 +193,6 @@
     "openRooms": "Open rooms (waiting/active)",
     "none": "None",
     "proOnly": "Pro only",
-    "contactAdmin": "Contact an admin to upgrade",
     "redeemHint": "Enter a new code to renew or change plan. A new code replaces the current one.",
     "securityTitle": "Security settings",
     "securitySubtitle": "Update your account password",
@@ -209,16 +208,19 @@
     "exportLogs": "Export logs",
     "removeWatermark": "Remove watermark",
     "free": "Free",
-    "pricePerMonth": "{price}₫/month",
     "playersPerRoom": "{count} players per room",
     "quizzesAndQuestions": "{quizzes} quizzes · up to {questions} questions each",
     "concurrentRooms": "{count} concurrent rooms",
     "proExtras": "Solo / player-paced mode + log export",
-    "adminManagedNote": "You cannot change your own plan — licenses are managed by an admin at",
     "maxPlayersPerRoom": "Up to {n} players / room",
     "planExpires": "Expires in {days} days",
     "planExpiresSoon": "Expiring soon — {days} days left",
-    "planLifetime": "No time limit"
+    "planLifetime": "No time limit",
+    "priceFrom": "from {price}₫",
+    "buyPlan": "Buy",
+    "renewPlan": "Renew",
+    "buyNote": "Every purchase gives you an activation code (shown here and emailed). See prices and buy on the",
+    "pricingLink": "pricing page"
   },
   "qrPage": {
     "title": "Join the Game!",
@@ -742,10 +744,6 @@
     "newEndDate": "New end date: {date}",
     "keepsLifetime": "stays lifetime",
     "losesDays": "Drops the {n} days left",
-    "saleToggle": "Record payment (Zalo / transfer / cash)",
-    "saleAmount": "Amount received (VND)",
-    "saleRef": "Reference: bank transaction ID or \"cash dd/mm\"",
-    "saleRefRequired": "A payment reference is required when an amount is entered",
     "revokePro": "Revoke Pro",
     "enforcementIs": "Enforcement is",
     "on": "ON",
@@ -909,7 +907,6 @@
     "daysLeft": "{n} days left",
     "planActive": "Active",
     "planDescription": "Description",
-    "priceVnd": "Price (VND)",
     "playersPerRoomLabel": "Players / room",
     "maxQuizzesLabel": "Max quizzes (-1 = ∞)",
     "maxTemplatesLabel": "Max templates (-1 = ∞)",
@@ -923,7 +920,8 @@
     "savePlanBtn": "Save {plan} ({players} players)",
     "batchLabel": "Batch",
     "codeCol": "Code",
-    "tabPayments": "Payments"
+    "tabPayments": "Payments",
+    "grantInternalHint": "Manual grants are for compensation, gifts and fixes only. To sell (Zalo, transfer), mint a code in the \"Codes\" tab and send it to the buyer."
   },
   "apiErrors": {
     "serverErrorTitle": "The server hit an error handling your request",
@@ -1025,7 +1023,7 @@
     "title": "Pricing",
     "subtitle": "Buy or renew Pro. Renewing early adds to your current term.",
     "currentTerm": "Your Pro plan has {days} days left.",
-    "lifetimeOwned": "This account already has lifetime Pro — nothing to buy.",
+    "lifetimeOwned": "This account already has lifetime Pro. A code you buy can be used on another account.",
     "loading": "Loading prices…",
     "termDays": "{days} days",
     "payQr": "Pay by QR",
@@ -1051,7 +1049,7 @@
     "waiting": "Waiting for payment…",
     "cancelOrder": "Cancel payment",
     "paidTitle": "Payment received",
-    "paidBody": "{name} is now active on your account.",
+    "paidBody": "Here is your {name} activation code. It was also sent to your email.",
     "expiredBody": "This QR code has expired. If you already paid the exact amount with this note, the plan still activates automatically — do not pay again.",
     "reviewBody": "We received a transfer that needs an administrator to check it (wrong amount or late). You will be activated once it is confirmed.",
     "newQr": "New QR code",
@@ -1062,7 +1060,12 @@
     "status_expired": "Expired",
     "status_cancelled": "Cancelled",
     "status_needs_review": "Needs review",
-    "cancelledBody": "This order was cancelled. If you already paid, do not pay again — an administrator will check and settle it."
+    "cancelledBody": "This order was cancelled. If you already paid, do not pay again — an administrator will check and settle it.",
+    "activateHere": "Activate on this account",
+    "codeTransferHint": "Or copy the code and enter it on another account (Settings → Activation code). One use; if that account has an active Pro term, the time is added to it.",
+    "codeActivated": "{plan} is now active on this account.",
+    "codeUsedHere": "This code was activated on this account.",
+    "codeUsedElsewhere": "This code was used on another account."
   },
   "adminPayments": {
     "checkoutTitle": "QR checkout (SePay)",
@@ -1139,6 +1142,8 @@
     "reconcile": "Reconcile now",
     "reconciling": "Reconciling…",
     "reconcileHint": "Fetch the last 2 days of transactions from SePay and record any the webhook missed",
-    "reconcileDone": "Reconciled: SePay returned {fetched}, recovered {recovered} missed ({paid} activated, {review} need action)"
+    "reconcileDone": "Reconciled: SePay returned {fetched}, recovered {recovered} missed ({paid} activated, {review} need action)",
+    "codeRedeemedBy": "Activated by {email}",
+    "codeNotRedeemed": "Code not activated yet"
   }
 }
