@@ -3,6 +3,7 @@
 import { apiRequest, apiRequestText } from '@/services/api/client'
 import { revalidatePath } from 'next/cache'
 import { getTranslations } from 'next-intl/server'
+import { publicErrorMessage } from '@/lib/api-errors'
 
 export type PricingPlan = {
   id: string
@@ -199,8 +200,7 @@ export async function redeemLicenseCode(code: string): Promise<RedeemResult> {
       endsAt: data?.subscription?.ends_at ?? null,
     }
   } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : t('redeemFailed')
-    return { ok: false, error: message }
+    return { ok: false, error: publicErrorMessage(e, t('redeemFailed')) }
   }
 }
 

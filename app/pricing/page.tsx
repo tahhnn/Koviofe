@@ -81,7 +81,7 @@ export default function PricingPage() {
                       <div className="text-2xl font-black text-[#e85d4c]">{format.number(p.amount_vnd)}đ</div>
                       <div className="text-xs text-[#9a9eab]">{t('termDays', { days: p.duration_days })}</div>
                     </div>
-                    {catalog.payment_enabled && !lifetimePro && (
+                    {catalog.payment_enabled && (
                       <Button
                         type="button"
                         onClick={() => buy(p)}

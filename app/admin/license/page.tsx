@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { downloadCsv } from '@/lib/audit-labels'
+import { publicErrorMessage } from '@/lib/api-errors'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -123,10 +124,6 @@ function canStack(s: LicenseSubscriptionRow) {
   return s.plan_id === 'pro' && !s.expired
 }
 
-function parseVnd(raw?: string) {
-  const n = parseInt((raw || '').replace(/\D/g, ''), 10)
-  return Number.isFinite(n) && n > 0 ? n : 0
-}
 
 export default function AdminLicensePage() {
   const t = useTranslations('adminLicense')
@@ -178,9 +175,6 @@ export default function AdminLicensePage() {
   // Unset means "the default for this row" — ticked whenever there is a live
   // Pro term to add to, so a paid renewal never silently drops the days left.
   const [extendByUser, setExtendByUser] = useState<Record<number, boolean>>({})
-  // Payment taken outside the app (Zalo, transfer, cash), recorded with the
-  // grant so it shows up in History / reconciliation.
-  const [saleByUser, setSaleByUser] = useState<Record<number, { amount: string; ref: string }>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -230,7 +224,7 @@ export default function AdminLicensePage() {
         })
       )
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('loadCodesFailed'))
+      setErr(publicErrorMessage(e, t('loadCodesFailed')))
     }
   }, [codeFilter, codeSearch])
 
@@ -262,7 +256,7 @@ export default function AdminLicensePage() {
       await loadCodes()
       flash(t('mintedCount', { count: minted.length }))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('mintFailed'))
+      setErr(publicErrorMessage(e, t('mintFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -279,7 +273,7 @@ export default function AdminLicensePage() {
       setEvents(res.events)
       setSummary(res.summary)
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('loadHistoryFailed'))
+      setErr(publicErrorMessage(e, t('loadHistoryFailed')))
     }
   }, [histFrom, histTo, histEmail, histAction])
 
@@ -305,7 +299,7 @@ export default function AdminLicensePage() {
       downloadCsv(csv, `license-history-${new Date().toISOString().slice(0, 10)}.csv`)
       flash(t('csvDownloaded'))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('csvFailed'))
+      setErr(publicErrorMessage(e, t('csvFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -325,7 +319,7 @@ export default function AdminLicensePage() {
       setSendEmail('')
       setSendName('')
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('emailFailed'))
+      setErr(publicErrorMessage(e, t('emailFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -338,7 +332,7 @@ export default function AdminLicensePage() {
       await loadCodes()
       flash(t('revokedCode', { code }))
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('revokeFailed'))
+      setErr(publicErrorMessage(e, t('revokeFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -379,7 +373,7 @@ export default function AdminLicensePage() {
       flash(t('planSaved', { plan: planId }))
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('saveFailed'))
+      setErr(publicErrorMessage(e, t('saveFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -406,36 +400,21 @@ export default function AdminLicensePage() {
 
   const grantPro = async (s: LicenseSubscriptionRow) => {
     const userId = s.user_id
-    const sale = saleByUser[userId]
-    const amountVnd = parseVnd(sale?.amount)
-    const externalRef = sale?.ref.trim() || ''
-    // Mirrors the API rule: an amount nobody can find on a statement is not
-    // reconcilable, so it is refused before the request rather than after.
-    if (amountVnd > 0 && !externalRef) {
-      setErr(t('saleRefRequired'))
-      return
-    }
     setBusyKey(`pro-${userId}`)
     try {
       const dur = durationByUser[userId] || '30'
-      const payment = { amountVnd, externalRef }
       if (dur === 'lifetime') {
-        await adminAssignPlan({ userId, planId: 'pro', lifetime: true, ...payment })
+        await adminAssignPlan({ userId, planId: 'pro', lifetime: true })
         flash(t('grantedLifetime', { user: userId }))
       } else {
         const days = parseInt(dur, 10)
         const extend = extendFor(s)
-        await adminAssignPlan({ userId, planId: 'pro', endsAtDays: days, extend, ...payment })
+        await adminAssignPlan({ userId, planId: 'pro', endsAtDays: days, extend })
         flash(t('grantedDays', { days, user: userId }))
       }
-      setSaleByUser((prev) => {
-        const next = { ...prev }
-        delete next[userId]
-        return next
-      })
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('assignFailed'))
+      setErr(publicErrorMessage(e, t('assignFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -457,7 +436,7 @@ export default function AdminLicensePage() {
       await loadCodes()
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('clawBackFailed'))
+      setErr(publicErrorMessage(e, t('clawBackFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -476,7 +455,7 @@ export default function AdminLicensePage() {
       flash(t('revokedToFree', { label }))
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('revokeFailed'))
+      setErr(publicErrorMessage(e, t('revokeFailed')))
     } finally {
       setBusyKey(null)
     }
@@ -500,7 +479,7 @@ export default function AdminLicensePage() {
       flash(t(next ? 'enforcementTurnedOn' : 'enforcementTurnedOff'))
       await load()
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : t('enforcementFailed'))
+      setErr(publicErrorMessage(e, t('enforcementFailed')))
       // The 409 body does not survive the throw, so re-read to show which
       // checks are actually failing right now.
       const st = await adminGetEnforcement()
@@ -845,39 +824,7 @@ export default function AdminLicensePage() {
                                       </div>
                                     )}
                                 </div>
-                                <details className="text-xs" open={!!saleByUser[s.user_id]}>
-                                  <summary className="cursor-pointer text-[#9a9eab] hover:text-[#f2f0eb]">
-                                    {t('saleToggle')}
-                                  </summary>
-                                  <div className="mt-2 flex flex-col gap-2">
-                                    <Input
-                                      inputMode="numeric"
-                                      placeholder={t('saleAmount')}
-                                      aria-label={t('saleAmount')}
-                                      value={saleByUser[s.user_id]?.amount ?? ''}
-                                      onChange={(e) =>
-                                        setSaleByUser((prev) => ({
-                                          ...prev,
-                                          [s.user_id]: { amount: e.target.value, ref: prev[s.user_id]?.ref ?? '' },
-                                        }))
-                                      }
-                                      className="h-9 bg-black/40 border-white/10 text-xs"
-                                    />
-                                    <Input
-                                      placeholder={t('saleRef')}
-                                      aria-label={t('saleRef')}
-                                      maxLength={120}
-                                      value={saleByUser[s.user_id]?.ref ?? ''}
-                                      onChange={(e) =>
-                                        setSaleByUser((prev) => ({
-                                          ...prev,
-                                          [s.user_id]: { amount: prev[s.user_id]?.amount ?? '', ref: e.target.value },
-                                        }))
-                                      }
-                                      className="h-9 bg-black/40 border-white/10 text-xs"
-                                    />
-                                  </div>
-                                </details>
+                                <p className="text-[11px] text-[#9a9eab]">{t('grantInternalHint')}</p>
                               </div>
                             </td>
                           </tr>
@@ -944,7 +891,6 @@ export default function AdminLicensePage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {(
                           [
-                            ['price_monthly_vnd', t('priceVnd')],
                             ['max_players_per_room', t('playersPerRoomLabel')],
                             ['max_quizzes', t('maxQuizzesLabel')],
                             ['max_templates', t('maxTemplatesLabel')],

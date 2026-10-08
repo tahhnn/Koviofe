@@ -5,6 +5,7 @@ import { useFormatter, useTranslations } from 'next-intl'
 import { useRouter } from 'next/navigation'
 import { Check, CheckCircle2, Clock, Copy, Loader2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { PurchasedCode } from '@/components/purchased-code'
 import {
   cancelPaymentOrder,
   createPaymentOrder,
@@ -84,6 +85,10 @@ export function PaymentCheckout({
   const [view, setView] = useState<OrderView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // The QR service answers an unsupported bank (SePay's test-mode ACMEBank)
+  // or a malformed account with a 200 text body, which renders as a broken
+  // image. Keyed by URL so a new order gets a fresh attempt.
+  const [qrFailedUrl, setQrFailedUrl] = useState<string | null>(null)
   const started = useRef(false)
 
   const order = view?.order
@@ -181,7 +186,7 @@ export function PaymentCheckout({
 
       {order?.status === 'pending' && checkout && (
         <div className="grid gap-5 sm:grid-cols-[220px_1fr] items-start">
-          {checkout.qr_url ? (
+          {checkout.qr_url && qrFailedUrl !== checkout.qr_url ? (
             // External image on purpose: the QR is rendered by SePay's VietQR
             // service from the bank account, amount and order code.
             // eslint-disable-next-line @next/next/no-img-element
@@ -190,8 +195,13 @@ export function PaymentCheckout({
               alt={t('qrAlt')}
               width={220}
               height={220}
+              onError={() => setQrFailedUrl(checkout.qr_url)}
               className="w-full max-w-[220px] mx-auto rounded-2xl bg-white p-2"
             />
+          ) : checkout.qr_url ? (
+            <div className="w-full max-w-[220px] mx-auto aspect-square rounded-2xl border border-dashed border-white/15 bg-black/30 p-4 flex items-center justify-center text-center text-xs text-[#9a9eab]">
+              {t('qrUnavailable')}
+            </div>
           ) : null}
           <div className="space-y-3">
             <div className="rounded-2xl border border-white/10 bg-black/30 px-4">
@@ -225,12 +235,21 @@ export function PaymentCheckout({
       )}
 
       {order?.status === 'paid' && (
-        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 flex gap-3">
-          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-          <div>
-            <p className="font-semibold text-[#f2f0eb]">{t('paidTitle')}</p>
-            <p className="text-sm text-[#9a9eab]">{t('paidBody', { name: order.product_name })}</p>
+        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 space-y-3">
+          <div className="flex gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <div>
+              <p className="font-semibold text-[#f2f0eb]">{t('paidTitle')}</p>
+              <p className="text-sm text-[#9a9eab]">{t('paidBody', { name: order.product_name })}</p>
+            </div>
           </div>
+          {order.license_code && (
+            <PurchasedCode
+              code={order.license_code}
+              used={!!order.code_used}
+              usedByMe={!!order.redeemed_by_me}
+            />
+          )}
         </div>
       )}
 

@@ -21,6 +21,8 @@
  * traffic arriving from the frontend container.
  */
 
+import { publicErrorMessage } from '@/lib/api-errors'
+
 const API_BASE = (process.env.NEXT_PUBLIC_API_URL || '/api').replace(/\/$/, '')
 
 /** How the caller should react, independent of the language the API answered
@@ -165,6 +167,6 @@ export async function submitAnswer(
     // A network failure here is indistinguishable from a rejected answer for
     // the player, but it is retryable, so it classifies as FAILED.
     console.error('Error submitting answer: ', e)
-    return { error: e?.message || 'Error submitting answer', code: 'FAILED' }
+    return { error: publicErrorMessage(e, 'Error submitting answer'), code: 'FAILED' }
   }
 }

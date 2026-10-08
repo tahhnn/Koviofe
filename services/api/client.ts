@@ -58,9 +58,10 @@ export async function apiRequest(
     data = text ? JSON.parse(text) : null
   } catch {
     const snippet = (text || '').replace(/\s+/g, ' ').slice(0, 180)
-    throw new Error(
-      `Invalid JSON response (${res.status}) ${method} ${path}: ${snippet || '(empty body)'}`
-    )
+    // The path and body are for the log only: this message can reach the
+    // browser through a Server Action's `{ error }` result.
+    console.error(`Invalid JSON response (${res.status}) ${method} ${path}: ${snippet || '(empty body)'}`)
+    throw new Error(`Invalid JSON response (${res.status})`)
   }
 
   if (!res.ok) {

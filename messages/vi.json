@@ -18,7 +18,8 @@
     "retry": "Thử lại",
     "copy": "Sao chép",
     "copied": "Đã sao chép",
-    "accountMenu": "Menu tài khoản"
+    "accountMenu": "Menu tài khoản",
+    "unexpectedError": "Có lỗi xảy ra, vui lòng thử lại."
   },
   "nav": {
     "signIn": "Đăng nhập",
@@ -184,7 +185,7 @@
   },
   "settings": {
     "planSection": "Gói đăng ký",
-    "planSubtitle": "Xem giới hạn và quyền lợi hiện tại. Nhập mã kích hoạt để nâng cấp.",
+    "planSubtitle": "Xem giới hạn và quyền lợi hiện tại. Mua gói để nhận mã kích hoạt, rồi nhập mã để kích hoạt.",
     "currentPlan": "Gói hiện tại",
     "planLoading": "Đang tải gói…",
     "questionsPerQuiz": "Câu hỏi / quiz:",
@@ -192,7 +193,6 @@
     "openRooms": "Phòng đang mở (chờ/đang chạy)",
     "none": "Không",
     "proOnly": "Chỉ gói Pro",
-    "contactAdmin": "Liên hệ quản trị viên để nâng cấp",
     "redeemHint": "Nhập mã mới để gia hạn hoặc đổi gói. Mã mới thay thế gói hiện tại.",
     "securityTitle": "Cài đặt bảo mật",
     "securitySubtitle": "Đổi mật khẩu tài khoản",
@@ -208,16 +208,19 @@
     "exportLogs": "Xuất log",
     "removeWatermark": "Bỏ watermark",
     "free": "Miễn phí",
-    "pricePerMonth": "{price}₫/tháng",
     "playersPerRoom": "{count} người / phòng",
     "quizzesAndQuestions": "{quizzes} quiz · tối đa {questions} câu/quiz",
     "concurrentRooms": "{count} phòng đồng thời",
     "proExtras": "Chế độ Solo (người chơi tự điều khiển) + xuất log",
-    "adminManagedNote": "User không thể tự đổi gói — license do admin quản lý tại",
     "maxPlayersPerRoom": "Tối đa {n} người chơi / phòng",
     "planExpires": "Hết hạn sau {days} ngày",
     "planExpiresSoon": "Sắp hết hạn — còn {days} ngày",
-    "planLifetime": "Không giới hạn thời gian"
+    "planLifetime": "Không giới hạn thời gian",
+    "priceFrom": "từ {price}₫",
+    "buyPlan": "Mua gói",
+    "renewPlan": "Gia hạn",
+    "buyNote": "Mỗi lần mua bạn nhận một mã kích hoạt (hiện ở đây và gửi qua email). Xem giá và mua tại",
+    "pricingLink": "Bảng giá"
   },
   "qrPage": {
     "title": "Vào chơi ngay!",
@@ -745,10 +748,6 @@
     "newEndDate": "Hạn mới: {date}",
     "keepsLifetime": "giữ vĩnh viễn",
     "losesDays": "Sẽ mất {n} ngày còn lại",
-    "saleToggle": "Ghi nhận thanh toán (Zalo / chuyển khoản / tiền mặt)",
-    "saleAmount": "Số tiền đã thu (VND)",
-    "saleRef": "Mã tham chiếu: mã GD ngân hàng hoặc \"tiền mặt dd/mm\"",
-    "saleRefRequired": "Có số tiền thì phải nhập mã tham chiếu để đối soát",
     "revokePro": "Ngắt Pro",
     "enforcementIs": "Enforcement đang",
     "on": "BẬT",
@@ -912,7 +911,6 @@
     "daysLeft": "Còn {n} ngày",
     "planActive": "Đang bật",
     "planDescription": "Mô tả",
-    "priceVnd": "Giá (VND)",
     "playersPerRoomLabel": "Người chơi / phòng",
     "maxQuizzesLabel": "Số quiz tối đa (-1 = ∞)",
     "maxTemplatesLabel": "Số mẫu tối đa (-1 = ∞)",
@@ -926,7 +924,8 @@
     "savePlanBtn": "Lưu gói {plan} ({players} người chơi)",
     "batchLabel": "Lô",
     "codeCol": "Mã",
-    "tabPayments": "Thanh toán"
+    "tabPayments": "Thanh toán",
+    "grantInternalHint": "Gán tay chỉ dùng cho bù / tặng / sửa sai. Bán gói (Zalo, chuyển khoản) → đúc mã ở tab \"Mã kích hoạt\" và gửi cho người mua."
   },
   "apiErrors": {
     "serverErrorTitle": "Máy chủ gặp lỗi khi xử lý yêu cầu",
@@ -1028,7 +1027,7 @@
     "title": "Bảng giá",
     "subtitle": "Mua hoặc gia hạn gói Pro. Gia hạn sớm được cộng dồn vào hạn hiện tại.",
     "currentTerm": "Gói Pro hiện tại còn {days} ngày.",
-    "lifetimeOwned": "Tài khoản đã có Pro vĩnh viễn — không cần mua thêm.",
+    "lifetimeOwned": "Tài khoản đã có Pro vĩnh viễn. Mã bạn mua có thể dùng cho tài khoản khác.",
     "loading": "Đang tải bảng giá…",
     "termDays": "{days} ngày",
     "payQr": "Thanh toán QR",
@@ -1044,6 +1043,7 @@
     "close": "Đóng",
     "creating": "Đang tạo mã thanh toán…",
     "qrAlt": "Mã QR chuyển khoản",
+    "qrUnavailable": "Không tải được mã QR. Vui lòng chuyển khoản theo thông tin bên cạnh.",
     "bank": "Ngân hàng",
     "account": "Số tài khoản",
     "holder": "Chủ tài khoản",
@@ -1053,7 +1053,7 @@
     "waiting": "Đang chờ nhận tiền…",
     "cancelOrder": "Huỷ thanh toán",
     "paidTitle": "Thanh toán thành công",
-    "paidBody": "Đã kích hoạt {name} cho tài khoản của bạn.",
+    "paidBody": "Đây là mã kích hoạt {name} của bạn. Mã cũng đã được gửi vào email.",
     "expiredBody": "Mã QR đã hết hạn. Nếu bạn đã chuyển đúng số tiền và nội dung, gói vẫn được kích hoạt tự động — đừng chuyển lại.",
     "reviewBody": "Đã nhận giao dịch nhưng cần quản trị viên kiểm tra (sai số tiền hoặc chuyển trễ). Bạn sẽ được kích hoạt sau khi xác nhận.",
     "newQr": "Tạo mã QR mới",
@@ -1064,7 +1064,12 @@
     "status_expired": "Hết hạn",
     "status_cancelled": "Đã huỷ",
     "status_needs_review": "Cần kiểm tra",
-    "cancelledBody": "Đơn này đã huỷ. Nếu bạn đã lỡ chuyển tiền, đừng chuyển lại — quản trị viên sẽ kiểm tra và xử lý."
+    "cancelledBody": "Đơn này đã huỷ. Nếu bạn đã lỡ chuyển tiền, đừng chuyển lại — quản trị viên sẽ kiểm tra và xử lý.",
+    "activateHere": "Kích hoạt cho tài khoản này",
+    "codeTransferHint": "Hoặc copy mã và nhập ở tài khoản khác (Cài đặt → Mã kích hoạt). Mã dùng được 1 lần; nếu tài khoản đang có Pro còn hạn, thời hạn được cộng dồn.",
+    "codeActivated": "Đã kích hoạt {plan} cho tài khoản này.",
+    "codeUsedHere": "Mã đã được kích hoạt cho tài khoản này.",
+    "codeUsedElsewhere": "Mã đã được dùng ở một tài khoản khác."
   },
   "adminPayments": {
     "checkoutTitle": "Thanh toán QR (SePay)",
@@ -1141,6 +1146,8 @@
     "reconcile": "Đối soát ngay",
     "reconciling": "Đang đối soát…",
     "reconcileHint": "Lấy giao dịch 2 ngày gần nhất từ SePay và ghi những giao dịch webhook bị lỡ",
-    "reconcileDone": "Đối soát xong: SePay trả {fetched} giao dịch, vớt {recovered} giao dịch bị lỡ ({paid} đã kích hoạt, {review} cần xử lý)"
+    "reconcileDone": "Đối soát xong: SePay trả {fetched} giao dịch, vớt {recovered} giao dịch bị lỡ ({paid} đã kích hoạt, {review} cần xử lý)",
+    "codeRedeemedBy": "Đã kích hoạt: {email}",
+    "codeNotRedeemed": "Mã chưa được kích hoạt"
   }
 }

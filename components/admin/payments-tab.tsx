@@ -347,7 +347,19 @@ export function PaymentsTab({ onChanged }: { onChanged?: () => void }) {
                 const settleable = o.status !== 'paid'
                 return (
                   <tr key={o.id} className="border-b border-white/5 align-top">
-                    <td className="px-2 py-2 font-mono text-xs text-[#f2f0eb]">{o.order_code}</td>
+                    <td className="px-2 py-2 font-mono text-xs text-[#f2f0eb]">
+                      {o.order_code}
+                      {o.license_code && (
+                        <div className="mt-1 text-[11px]">
+                          <span className="text-[#c5c2ba]">{o.license_code}</span>
+                          <div className={`font-sans ${o.code_used ? 'text-emerald-400' : 'text-amber-300'}`}>
+                            {o.code_used
+                              ? t('codeRedeemedBy', { email: o.redeemed_by || '—' })
+                              : t('codeNotRedeemed')}
+                          </div>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-2 py-2 text-xs">
                       <div className="text-[#f2f0eb]">{o.email || `#${o.user_id}`}</div>
                       <div className="text-[#9a9eab]">{o.product_name}</div>

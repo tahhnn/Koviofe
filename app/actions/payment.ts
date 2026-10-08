@@ -1,6 +1,8 @@
 'use server'
 
 import { apiRequest, apiRequestText } from '@/services/api/client'
+import { getTranslations } from 'next-intl/server'
+import { publicErrorMessage } from '@/lib/api-errors'
 import { revalidatePath } from 'next/cache'
 
 export type PaymentProduct = {
@@ -39,6 +41,11 @@ export type PaymentOrder = {
   external_ref?: string
   confirmed_by?: number | null
   note?: string
+  /** The activation code this payment bought; set once the order is paid. */
+  license_code?: string
+  /** Buyer views only: whether the code was used, and whether on this account. */
+  code_used?: boolean
+  redeemed_by_me?: boolean
   created_at: string
 }
 
@@ -53,7 +60,13 @@ export type CheckoutInfo = {
 /** checkout is present only while the order is pending. */
 export type OrderView = { order: PaymentOrder; checkout?: CheckoutInfo }
 
-export type AdminOrderRow = PaymentOrder & { email: string }
+export type AdminOrderRow = PaymentOrder & {
+  email: string
+  code_used: boolean
+  /** May differ from email: a buyer can activate the code on another account. */
+  redeemed_by?: string
+  redeemed_at?: string | null
+}
 
 export type CheckoutState = { enabled: boolean; configured: boolean; effective: boolean }
 
@@ -69,7 +82,8 @@ async function attempt<T>(fn: () => Promise<T>): Promise<Result<T>> {
   try {
     return { ok: true, data: await fn() }
   } catch (e: unknown) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Request failed' }
+    const t = await getTranslations('common')
+    return { ok: false, error: publicErrorMessage(e, t('unexpectedError')) }
   }
 }
 
