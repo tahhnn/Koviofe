@@ -7,6 +7,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { getRoomResultsForPage } from '@/app/actions/game'
 import { fetchPlayerResults } from '@/lib/player-session'
+import type { QuestionStat } from '@/lib/game-session'
+import { QuestionStatsList } from '@/components/question-stats'
 import { ThemedGameBackground } from '@/components/game-background'
 import { BrandMark } from '@/components/brand-mark'
 import { XCircle } from 'lucide-react'
@@ -31,6 +33,8 @@ export default function ResultsPage() {
   const sessionId = params.sessionId as string
 
   const [leaderboard, setLeaderboard] = useState<Standing[]>([])
+  const [questionStats, setQuestionStats] = useState<QuestionStat[]>([])
+  const [tab, setTab] = useState<'leaderboard' | 'questions'>('leaderboard')
   const [userRank, setUserRank] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
@@ -76,9 +80,10 @@ export default function ResultsPage() {
         }
         results = res.results
       }
-      const { players, endedReason: reason, status, themeConfig: theme } = results
+      const { players, endedReason: reason, status, themeConfig: theme, questionStats: stats } = results
       setThemeConfig(theme)
       setLeaderboard(players)
+      setQuestionStats(stats)
       setRoomFinished(status === 'finished')
       if (reason) setEndedReason(reason)
 
@@ -266,39 +271,60 @@ export default function ResultsPage() {
           )}
 
           <div className="rounded-2xl border border-[#2c313d] bg-[#1a1d26]/95 p-5 md:p-6">
-            <h2 className="text-lg font-semibold text-[#f2f0eb] mb-4">{t('leaderboard')}</h2>
-            {leaderboard.length === 0 ? (
-              <p className="text-sm text-[#9a9eab]">{t('empty')}</p>
-            ) : (
-              <ul className="space-y-2 max-h-[50vh] md:max-h-[60vh] overflow-y-auto">
-                {leaderboard.map((player, i) => (
-                  <li
-                    key={`leaderboard-${player.id}-${i}`}
-                    className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 ${
-                      player.isYou ? 'bg-[#e85d4c]/10 ring-1 ring-[#e85d4c]/40' : 'bg-[#12141a]/80'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-sm text-[#9a9eab] w-10 shrink-0 text-right tabular-nums">#{player.rank}</span>
-                      <div className="min-w-0">
-                        <p className="font-medium text-[#f2f0eb] truncate xl:text-lg">
-                          {player.username}
-                          {player.isYou && (
-                            <span className="ml-2 text-xs text-[#e85d4c]">({t('you')})</span>
-                          )}
-                        </p>
-                        <p className="text-xs xl:text-sm text-[#9a9eab]">
-                          {t('correctCount', { count: player.correctAnswers })}
-                        </p>
+            <div role="tablist" aria-label={t('leaderboard')} className="mb-4 inline-flex rounded-xl bg-[#12141a]/80 p-1 gap-1">
+              {(['leaderboard', 'questions'] as const).map(key => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  id={`results-tab-${key}`}
+                  aria-selected={tab === key}
+                  aria-controls={`results-panel-${key}`}
+                  onClick={() => setTab(key)}
+                  className={`h-9 px-4 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
+                    tab === key ? 'bg-[#e85d4c] text-[#fff8f5]' : 'text-[#9a9eab] hover:text-[#f2f0eb]'
+                  }`}
+                >
+                  {key === 'leaderboard' ? t('leaderboard') : t('questionStats.tab')}
+                </button>
+              ))}
+            </div>
+            <div role="tabpanel" id={`results-panel-${tab}`} aria-labelledby={`results-tab-${tab}`}>
+              {tab === 'questions' ? (
+                <QuestionStatsList stats={questionStats} roomFinished={roomFinished} />
+              ) : leaderboard.length === 0 ? (
+                <p className="text-sm text-[#9a9eab]">{t('empty')}</p>
+              ) : (
+                <ul className="space-y-2 max-h-[50vh] md:max-h-[60vh] overflow-y-auto">
+                  {leaderboard.map((player, i) => (
+                    <li
+                      key={`leaderboard-${player.id}-${i}`}
+                      className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 ${
+                        player.isYou ? 'bg-[#e85d4c]/10 ring-1 ring-[#e85d4c]/40' : 'bg-[#12141a]/80'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-sm text-[#9a9eab] w-10 shrink-0 text-right tabular-nums">#{player.rank}</span>
+                        <div className="min-w-0">
+                          <p className="font-medium text-[#f2f0eb] truncate xl:text-lg">
+                            {player.username}
+                            {player.isYou && (
+                              <span className="ml-2 text-xs text-[#e85d4c]">({t('you')})</span>
+                            )}
+                          </p>
+                          <p className="text-xs xl:text-sm text-[#9a9eab]">
+                            {t('correctCount', { count: player.correctAnswers })}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <p className="font-semibold text-[#e85d4c] tabular-nums shrink-0">
-                      {player.totalPoints}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
+                      <p className="font-semibold text-[#e85d4c] tabular-nums shrink-0">
+                        {player.totalPoints}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">

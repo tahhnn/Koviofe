@@ -108,7 +108,21 @@
     "liveTitle": "Bảng xếp hạng đang cập nhật",
     "liveHint": "Vẫn còn người đang chơi — thứ hạng sẽ thay đổi cho tới khi cả phòng kết thúc.",
     "notAllowedTitle": "Không mở được kết quả trên thiết bị này",
-    "notAllowedHint": "Kết quả chỉ xem được trên thiết bị và trình duyệt đã dùng để chơi, hoặc khi đăng nhập bằng tài khoản host."
+    "notAllowedHint": "Kết quả chỉ xem được trên thiết bị và trình duyệt đã dùng để chơi, hoặc khi đăng nhập bằng tài khoản host.",
+    "questionStats": {
+      "tab": "Tỉ lệ đúng",
+      "questionLabel": "Câu {n}",
+      "correctAnswer": "Đáp án đúng",
+      "answerTrue": "Đúng",
+      "answerFalse": "Sai",
+      "answerPin": "Vị trí đánh dấu trên ảnh",
+      "pollNote": "Câu bình chọn — không tính đúng sai",
+      "pollCount": "{answered}/{total} người đã bình chọn",
+      "correctOfTotal": "{correct}/{total} người trả lời đúng",
+      "noAnswer": "{count} người không trả lời",
+      "empty": "Phòng này chưa có thống kê từng câu.",
+      "pending": "Thống kê từng câu sẽ có khi cả phòng kết thúc."
+    }
   },
   "admin": {
     "checking": "Đang kiểm tra quyền quản trị…",

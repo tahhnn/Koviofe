@@ -108,7 +108,21 @@
     "liveTitle": "Standings still updating",
     "liveHint": "Other players are still going — ranks will keep changing until the whole room is finished.",
     "notAllowedTitle": "Results can't be opened here",
-    "notAllowedHint": "Results are only available in the browser you played from, or when signed in as the host."
+    "notAllowedHint": "Results are only available in the browser you played from, or when signed in as the host.",
+    "questionStats": {
+      "tab": "Correct rate",
+      "questionLabel": "Question {n}",
+      "correctAnswer": "Correct answer",
+      "answerTrue": "True",
+      "answerFalse": "False",
+      "answerPin": "The marked spot on the image",
+      "pollNote": "Poll — no right or wrong answer",
+      "pollCount": "{answered}/{total} people voted",
+      "correctOfTotal": "{correct}/{total} answered correctly",
+      "noAnswer": "{count} did not answer",
+      "empty": "No per-question stats for this room.",
+      "pending": "Per-question stats appear once the whole room is finished."
+    }
   },
   "admin": {
     "checking": "Checking admin access…",
