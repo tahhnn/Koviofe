@@ -22,7 +22,10 @@ export type PricingPlan = {
   allow_remove_watermark: boolean
   allow_quiz_sharing?: boolean
   max_collaborators_per_quiz?: number
+  /** Sold by contacting a person (Business); customised on request. */
+  contact_sales?: boolean
   is_active?: boolean
+  sort_order?: number
 }
 
 export type LicenseSnapshot = {
