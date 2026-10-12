@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { GameBackground } from '@/components/game-background'
 import { BrandMark } from '@/components/brand-mark'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { Turnstile, type TurnstileHandle } from '@/components/turnstile'
 
 export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const t = useTranslations('auth')
@@ -21,6 +22,9 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const [captchaOn, setCaptchaOn] = useState(false)
+  const captchaRef = useRef<TurnstileHandle>(null)
 
   const isSignUp = mode === 'sign-up'
 
@@ -30,10 +34,12 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     setLoading(true)
 
     const result = isSignUp
-      ? await authClient.signUp.email({ email, nickname: name })
+      ? await authClient.signUp.email({ email, nickname: name, captchaToken })
       : await authClient.signIn.email({ email, password })
 
     setLoading(false)
+    // A token is spent by the request whatever the outcome.
+    if (isSignUp) captchaRef.current?.reset()
 
     if (result.error) {
       setError(result.error.message ?? tCommon('unexpectedError'))
@@ -130,6 +136,10 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
               </div>
             )}
 
+            {isSignUp && (
+              <Turnstile ref={captchaRef} action="register" onToken={setCaptchaToken} onEnabled={setCaptchaOn} />
+            )}
+
             {error && (
               <div
                 className="rounded-xl border border-[#ef4444]/25 bg-[#ef4444]/10 px-3.5 py-3 text-sm text-[#fca5a5]"
@@ -141,7 +151,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
 
             <Button
               type="submit"
-              disabled={loading}
+              disabled={loading || (isSignUp && captchaOn && !captchaToken)}
               className="w-full h-11 mt-1 bg-[#e85d4c] text-[#fff8f5] hover:bg-[#d44e3e] font-semibold rounded-xl"
             >
               {loading ? 'Please wait…' : isSignUp ? 'Create account' : 'Sign in'}

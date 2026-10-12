@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useRef, useState, Suspense } from 'react'
 import { useTranslations } from 'next-intl'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { GameBackground } from '@/components/game-background'
 import { BrandMark } from '@/components/brand-mark'
 import { LanguageSwitcher } from '@/components/language-switcher'
+import { Turnstile, type TurnstileHandle } from '@/components/turnstile'
 
 const RESEND_SECONDS = 60
 
@@ -25,14 +26,14 @@ function ForgotPasswordContent() {
   const tCommon = useTranslations('common')
   const searchParams = useSearchParams()
 
-  const [step, setStep] = useState<'email' | 'reset' | 'done'>('email')
+  const [sent, setSent] = useState(false)
   const [email, setEmail] = useState(searchParams.get('email') || '')
-  const [otp, setOtp] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const [captchaOn, setCaptchaOn] = useState(false)
+  const captchaRef = useRef<TurnstileHandle>(null)
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -40,53 +41,27 @@ function ForgotPasswordContent() {
     return () => clearTimeout(id)
   }, [cooldown])
 
-  const requestCode = async () => {
+  const requestLink = async () => {
     setError(null)
     setLoading(true)
-    const result = await authClient.forgotPassword({ email })
+    const result = await authClient.forgotPassword({ email, captchaToken })
     setLoading(false)
+    // A token is spent by the request whatever the outcome.
+    captchaRef.current?.reset()
     if (result.error) {
       setError(result.error.message ?? tCommon('unexpectedError'))
       return
     }
     setCooldown(RESEND_SECONDS)
-    setStep('reset')
+    setSent(true)
   }
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    await requestCode()
+    await requestLink()
   }
 
-  const handleResetSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    if (password.length < 8) {
-      setError(t('passwordTooShort'))
-      return
-    }
-    if (password !== confirm) {
-      setError(t('passwordMismatch'))
-      return
-    }
-    setLoading(true)
-    const result = await authClient.resetPassword({ email, otp, newPassword: password })
-    setLoading(false)
-    if (result.error) {
-      setError(result.error.message ?? tCommon('unexpectedError'))
-      return
-    }
-    setStep('done')
-  }
-
-  const errorBox = error && (
-    <div
-      className="rounded-xl border border-[#ef4444]/25 bg-[#ef4444]/10 px-3.5 py-3 text-sm text-[#fca5a5]"
-      role="alert"
-    >
-      {error}
-    </div>
-  )
+  const needCaptcha = captchaOn && !captchaToken
 
   return (
     <GameBackground variant="auth">
@@ -98,21 +73,21 @@ function ForgotPasswordContent() {
             </div>
             <BrandMark />
             <h1 className="text-2xl font-semibold text-[#f2f0eb] pt-2">
-              {step === 'done' ? t('successTitle') : t('title')}
+              {sent ? t('checkInboxTitle') : t('title')}
             </h1>
             <p className="text-sm text-[#9a9eab]">
-              {step === 'email' && t('subtitle')}
-              {step === 'reset' && (
+              {sent ? (
                 <>
-                  {t('codeSentTo')} <span className="text-[#f2f0eb] break-all">{email}</span>.
+                  {t('linkSentTo')} <span className="text-[#f2f0eb] break-all">{email}</span>. {t('linkExpiry')}
                 </>
+              ) : (
+                t('subtitle')
               )}
-              {step === 'done' && t('successBody')}
             </p>
           </div>
 
-          {step === 'email' && (
-            <form onSubmit={handleEmailSubmit} className="flex flex-col gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {!sent && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="email" className="text-sm text-[#c5c2ba]">
                   {tAuth('emailLabel')}
@@ -128,76 +103,32 @@ function ForgotPasswordContent() {
                   className={fieldClass}
                 />
               </div>
-              {errorBox}
-              <Button type="submit" disabled={loading} className={primaryButtonClass}>
-                {loading ? t('sending') : t('sendCode')}
-              </Button>
-            </form>
-          )}
+            )}
 
-          {step === 'reset' && (
-            <form onSubmit={handleResetSubmit} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="otp" className="text-sm text-[#c5c2ba]">
-                  {t('codeLabel')}
-                </Label>
-                <Input
-                  id="otp"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  required
-                  placeholder={t('codePlaceholder')}
-                  className={`${fieldClass} text-center tracking-widest text-lg font-semibold`}
-                />
+            {sent && <p className="text-sm text-[#9a9eab] text-center">{t('checkSpam')}</p>}
+
+            {/* Kept mounted after sending: a resend needs a fresh token. */}
+            <Turnstile ref={captchaRef} action="forgot_password" onToken={setCaptchaToken} onEnabled={setCaptchaOn} />
+
+            {error && (
+              <div
+                className="rounded-xl border border-[#ef4444]/25 bg-[#ef4444]/10 px-3.5 py-3 text-sm text-[#fca5a5]"
+                role="alert"
+              >
+                {error}
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="new-password" className="text-sm text-[#c5c2ba]">
-                  {t('newPasswordLabel')}
-                </Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  maxLength={72}
-                  autoComplete="new-password"
-                  placeholder="••••••••"
-                  className={fieldClass}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="confirm-password" className="text-sm text-[#c5c2ba]">
-                  {t('confirmPasswordLabel')}
-                </Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  required
-                  minLength={8}
-                  maxLength={72}
-                  autoComplete="new-password"
-                  placeholder="••••••••"
-                  className={fieldClass}
-                />
-              </div>
-              {errorBox}
-              <Button type="submit" disabled={loading} className={primaryButtonClass}>
-                {loading ? t('submitting') : t('submit')}
+            )}
+
+            {!sent ? (
+              <Button type="submit" disabled={loading || needCaptcha} className={primaryButtonClass}>
+                {loading ? t('sending') : t('sendLink')}
               </Button>
+            ) : (
               <div className="flex items-center justify-between text-sm">
                 <button
                   type="button"
                   onClick={() => {
-                    setStep('email')
+                    setSent(false)
                     setError(null)
                   }}
                   className="text-[#9a9eab] hover:text-[#f2f0eb] py-2"
@@ -205,33 +136,21 @@ function ForgotPasswordContent() {
                   {t('changeEmail')}
                 </button>
                 <button
-                  type="button"
-                  onClick={requestCode}
-                  disabled={loading || cooldown > 0}
+                  type="submit"
+                  disabled={loading || cooldown > 0 || needCaptcha}
                   className="text-[#e85d4c] hover:underline disabled:text-[#5c6170] disabled:no-underline py-2"
                 >
                   {cooldown > 0 ? t('resendIn', { seconds: cooldown }) : t('resend')}
                 </button>
               </div>
-            </form>
-          )}
+            )}
+          </form>
 
-          {step === 'done' && (
-            <Link
-              href="/sign-in"
-              className={`${primaryButtonClass} inline-flex items-center justify-center`}
-            >
-              {t('goSignIn')}
+          <p className="text-sm text-center mt-8 pt-6 border-t border-[#2c313d]">
+            <Link href="/sign-in" className="text-[#e85d4c] font-medium hover:underline inline-block py-2 px-1">
+              {t('backToSignIn')}
             </Link>
-          )}
-
-          {step !== 'done' && (
-            <p className="text-sm text-center mt-8 pt-6 border-t border-[#2c313d]">
-              <Link href="/sign-in" className="text-[#e85d4c] font-medium hover:underline inline-block py-2 px-1">
-                {t('backToSignIn')}
-              </Link>
-            </p>
-          )}
+          </p>
         </div>
       </div>
     </GameBackground>

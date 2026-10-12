@@ -26,6 +26,28 @@ function unexpectedError(err: unknown) {
   return { error: { message: undefined as string | undefined } }
 }
 
+function captchaHeaders(captchaToken?: string | null): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (captchaToken) h['X-Captcha-Token'] = captchaToken
+  return h
+}
+
+let siteKeyPromise: Promise<string> | null = null
+
+/** Public Turnstile site key from the backend; '' when the captcha is off. */
+export function getCaptchaSiteKey(): Promise<string> {
+  if (!siteKeyPromise) {
+    siteKeyPromise = fetch(`${API_URL}/auth/captcha`)
+      .then((r) => (r.ok ? r.json() : { site_key: '' }))
+      .then((d) => (typeof d?.site_key === 'string' ? d.site_key : ''))
+      .catch(() => {
+        siteKeyPromise = null
+        return ''
+      })
+  }
+  return siteKeyPromise
+}
+
 export const authClient = {
   signIn: {
     email: async ({ email, password }: { email: string; password?: string }) => {
@@ -51,11 +73,11 @@ export const authClient = {
     }
   },
   signUp: {
-    email: async ({ email, nickname }: { email: string; nickname: string; password?: string; name?: string }) => {
+    email: async ({ email, nickname, captchaToken }: { email: string; nickname: string; password?: string; name?: string; captchaToken?: string | null }) => {
       try {
         const res = await fetch(`${API_URL}/auth/register`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: captchaHeaders(captchaToken),
           body: JSON.stringify({ email, nickname }),
         })
         const data = await res.json()
@@ -89,11 +111,11 @@ export const authClient = {
       return unexpectedError(err)
     }
   },
-  forgotPassword: async ({ email }: { email: string }) => {
+  forgotPassword: async ({ email, captchaToken }: { email: string; captchaToken?: string | null }) => {
     try {
       const res = await fetch(`${API_URL}/auth/forgot-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: captchaHeaders(captchaToken),
         body: JSON.stringify({ email }),
       })
       const data = await res.json()
@@ -105,12 +127,28 @@ export const authClient = {
       return unexpectedError(err)
     }
   },
-  resetPassword: async ({ email, otp, newPassword }: { email: string; otp: string; newPassword: string }) => {
+  checkResetToken: async ({ token }: { token: string }) => {
+    try {
+      const res = await fetch(`${API_URL}/auth/reset-password/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        return { error: { message: data.error || 'Invalid link' } }
+      }
+      return { data }
+    } catch (err) {
+      return unexpectedError(err)
+    }
+  },
+  resetPassword: async ({ token, newPassword }: { token: string; newPassword: string }) => {
     try {
       const res = await fetch(`${API_URL}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp, new_password: newPassword }),
+        body: JSON.stringify({ token, new_password: newPassword }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -152,7 +190,7 @@ export const authClient = {
   }
 }
 
-export const { signIn, signUp, verifyOTP, forgotPassword, resetPassword, changePassword, signOut, getSession } = authClient
+export const { signIn, signUp, verifyOTP, forgotPassword, checkResetToken, resetPassword, changePassword, signOut, getSession } = authClient
 export const useSession = () => {
   if (typeof window === 'undefined') return { data: null, isPending: false }
   try {
