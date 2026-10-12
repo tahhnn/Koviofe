@@ -89,6 +89,38 @@ export const authClient = {
       return unexpectedError(err)
     }
   },
+  forgotPassword: async ({ email }: { email: string }) => {
+    try {
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        return { error: { message: data.error || 'Request failed' } }
+      }
+      return { data }
+    } catch (err) {
+      return unexpectedError(err)
+    }
+  },
+  resetPassword: async ({ email, otp, newPassword }: { email: string; otp: string; newPassword: string }) => {
+    try {
+      const res = await fetch(`${API_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp, new_password: newPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        return { error: { message: data.error || 'Reset failed' } }
+      }
+      return { data }
+    } catch (err) {
+      return unexpectedError(err)
+    }
+  },
   changePassword: async ({ oldPassword, newPassword }: { oldPassword: string; newPassword: string }) => {
     try {
       const { changePasswordAction } = await import('@/app/actions/auth-session')
@@ -120,7 +152,7 @@ export const authClient = {
   }
 }
 
-export const { signIn, signUp, verifyOTP, changePassword, signOut, getSession } = authClient
+export const { signIn, signUp, verifyOTP, forgotPassword, resetPassword, changePassword, signOut, getSession } = authClient
 export const useSession = () => {
   if (typeof window === 'undefined') return { data: null, isPending: false }
   try {

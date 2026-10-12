@@ -72,7 +72,8 @@
     "needAccount": "Chưa có tài khoản?",
     "haveAccount": "Đã có tài khoản?",
     "signUp": "Đăng ký",
-    "signIn": "Đăng nhập"
+    "signIn": "Đăng nhập",
+    "forgotLink": "Quên mật khẩu?"
   },
   "verify": {
     "successTitle": "Xác thực thành công!",
@@ -1169,5 +1170,27 @@
     "reconcileDone": "Đối soát xong: SePay trả {fetched} giao dịch, vớt {recovered} giao dịch bị lỡ ({paid} đã kích hoạt, {review} cần xử lý)",
     "codeRedeemedBy": "Đã kích hoạt: {email}",
     "codeNotRedeemed": "Mã chưa được kích hoạt"
+  },
+  "forgot": {
+    "title": "Đặt lại mật khẩu",
+    "subtitle": "Nhập email tài khoản, chúng tôi sẽ gửi mã 6 chữ số.",
+    "sendCode": "Gửi mã",
+    "sending": "Đang gửi…",
+    "codeSentTo": "Nếu tài khoản tồn tại, mã đã được gửi tới",
+    "codeLabel": "Mã đặt lại",
+    "codePlaceholder": "123456",
+    "newPasswordLabel": "Mật khẩu mới",
+    "confirmPasswordLabel": "Nhập lại mật khẩu mới",
+    "passwordMismatch": "Mật khẩu nhập lại không khớp",
+    "passwordTooShort": "Mật khẩu phải có ít nhất 8 ký tự",
+    "submit": "Đặt lại mật khẩu",
+    "submitting": "Đang đặt lại…",
+    "resend": "Gửi lại mã",
+    "resendIn": "Gửi lại sau {seconds}s",
+    "changeEmail": "Dùng email khác",
+    "successTitle": "Đã đổi mật khẩu",
+    "successBody": "Bạn có thể đăng nhập bằng mật khẩu mới.",
+    "goSignIn": "Tới trang đăng nhập",
+    "backToSignIn": "Quay lại đăng nhập"
   }
 }

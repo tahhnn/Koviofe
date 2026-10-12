@@ -121,6 +121,12 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
                   placeholder="••••••••"
                   className={fieldClass}
                 />
+                <Link
+                  href={email ? `/forgot-password?email=${encodeURIComponent(email)}` : '/forgot-password'}
+                  className="self-end text-sm text-[#e85d4c] hover:underline"
+                >
+                  {t('forgotLink')}
+                </Link>
               </div>
             )}
 

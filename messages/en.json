@@ -72,7 +72,8 @@
     "needAccount": "Need an account?",
     "haveAccount": "Already have an account?",
     "signUp": "Sign up",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "forgotLink": "Forgot password?"
   },
   "verify": {
     "successTitle": "Verification Successful!",
@@ -1165,5 +1166,27 @@
     "reconcileDone": "Reconciled: SePay returned {fetched}, recovered {recovered} missed ({paid} activated, {review} need action)",
     "codeRedeemedBy": "Activated by {email}",
     "codeNotRedeemed": "Code not activated yet"
+  },
+  "forgot": {
+    "title": "Reset your password",
+    "subtitle": "Enter your account email and we will send you a 6-digit code.",
+    "sendCode": "Send code",
+    "sending": "Sending…",
+    "codeSentTo": "If an account exists, a code was sent to",
+    "codeLabel": "Reset code",
+    "codePlaceholder": "123456",
+    "newPasswordLabel": "New password",
+    "confirmPasswordLabel": "Confirm new password",
+    "passwordMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "submit": "Reset password",
+    "submitting": "Resetting…",
+    "resend": "Resend code",
+    "resendIn": "Resend in {seconds}s",
+    "changeEmail": "Use a different email",
+    "successTitle": "Password updated",
+    "successBody": "You can now sign in with your new password.",
+    "goSignIn": "Go to sign in",
+    "backToSignIn": "Back to sign in"
   }
 }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 const protectedRoutes = ['/dashboard', '/quizzes', '/host', '/profile', '/templates', '/admin', '/luckydraw']
-const authRoutes = ['/sign-in', '/sign-up']
+const authRoutes = ['/sign-in', '/sign-up', '/forgot-password']
 const adminRoutes = ['/admin']
 
 function apiBase(): string {
