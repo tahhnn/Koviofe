@@ -65,17 +65,26 @@ function useCountdown(expiresAt?: string) {
   return left
 }
 
+/** Where SePay's hosted page sent the buyer back: /pricing?order=…&result=… */
+export type GatewayReturn = { orderCode: string; result?: 'success' | 'error' | 'cancel' }
+
 /**
- * QR checkout for one product: opens an order, shows the transfer, and waits
- * for the SePay webhook to mark it paid. Nothing here decides payment — the
- * page only reads the order the server settles.
+ * Checkout for one product: opens an order and waits for the server to mark it
+ * paid. Two ways to pay, chosen by the server:
+ *  - direct bank transfer: shows the QR and transfer details (SePay webhook);
+ *  - SePay Payment Gateway: posts a signed form to SePay's hosted page, which
+ *    sends the buyer back here with `resume` set (SePay IPN).
+ * Nothing here decides payment — the page only reads the order the server
+ * settles.
  */
 export function PaymentCheckout({
   product,
+  resume,
   zaloUrl,
   onClose,
 }: {
-  product: PaymentProduct
+  product?: PaymentProduct
+  resume?: GatewayReturn
   zaloUrl?: string
   onClose: () => void
 }) {
@@ -84,7 +93,8 @@ export function PaymentCheckout({
   const router = useRouter()
   const [view, setView] = useState<OrderView | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  // Busy from the first render when returning from SePay: the order is read on mount.
+  const [busy, setBusy] = useState(!!resume)
   // The QR service answers an unsupported bank (SePay's test-mode ACMEBank)
   // or a malformed account with a 200 text body, which renders as a broken
   // image. Keyed by URL so a new order gets a fresh attempt.
@@ -93,23 +103,48 @@ export function PaymentCheckout({
 
   const order = view?.order
   const checkout = view?.checkout
+  // Once a gateway form has been seen (or SePay sent the buyer back), the
+  // retry button opens SePay again rather than "a new QR".
+  const [viaGateway, setViaGateway] = useState(!!resume)
+  const show = useCallback((v: OrderView) => {
+    setView(v)
+    if (v.checkout?.gateway) setViaGateway(true)
+  }, [])
   const left = useCountdown(order?.status === 'pending' ? order.expires_at : undefined)
 
+  const productId = product?.id ?? order?.product_id
   const start = useCallback(async () => {
+    if (!productId) return
     setBusy(true)
     setError(null)
-    const r = await createPaymentOrder(product.id)
-    if (r.ok) setView(r.data)
+    const r = await createPaymentOrder(productId)
+    if (r.ok) show(r.data)
     else setError(r.error)
     setBusy(false)
-  }, [product.id])
+  }, [productId, show])
+
+  // Back from SePay's page: read the order. A cancel or an error there closes
+  // ours too, so "pay again" opens a fresh order rather than re-posting an
+  // invoice number SePay has already seen. Mount-only, so busy already starts
+  // true (see useState above).
+  const init = useCallback(async () => {
+    if (!resume) return start()
+    let r = await getPaymentOrder(resume.orderCode)
+    if (r.ok && r.data.order.status === 'pending' && (resume.result === 'cancel' || resume.result === 'error')) {
+      const c = await cancelPaymentOrder(resume.orderCode)
+      if (c.ok) r = c
+    }
+    if (r.ok) show(r.data)
+    else setError(r.error)
+    setBusy(false)
+  }, [resume, start, show])
 
   useEffect(() => {
     // Strict mode runs effects twice in dev; two orders would cancel each other.
     if (started.current) return
     started.current = true
-    void start()
-  }, [start])
+    void init()
+  }, [init])
 
   const refresh = useCallback(async () => {
     if (!order) return
@@ -163,8 +198,12 @@ export function PaymentCheckout({
     <div className="rounded-3xl border border-white/10 bg-black/40 p-5 sm:p-6 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-black text-[#f2f0eb]">{t('checkoutTitle', { name: product.name })}</h2>
-          <p className="text-sm text-[#9a9eab]">{vnd(product.amount_vnd)}</p>
+          <h2 className="text-lg font-black text-[#f2f0eb]">
+            {t('checkoutTitle', { name: product?.name ?? order?.product_name ?? '' })}
+          </h2>
+          {(product || order) && (
+            <p className="text-sm text-[#9a9eab]">{vnd(product?.amount_vnd ?? order?.amount_vnd ?? 0)}</p>
+          )}
         </div>
         <button type="button" onClick={onClose} className="text-xs text-[#9a9eab] hover:text-[#f2f0eb]">
           {t('close')}
@@ -184,7 +223,52 @@ export function PaymentCheckout({
         </div>
       )}
 
-      {order?.status === 'pending' && checkout && (
+      {order?.status === 'pending' && checkout?.gateway && (
+        <div className="space-y-3">
+          {resume?.result === 'success' ? (
+            <p className="text-sm text-[#c5c2ba]">{t('gatewayConfirming')}</p>
+          ) : (
+            <>
+              <p className="text-sm text-[#c5c2ba]">{t('gatewayHint')}</p>
+              {/* Posted as-is to SePay: field order is part of the signature. */}
+              <form action={checkout.gateway.action} method="POST">
+                {checkout.gateway.fields.map((f) => (
+                  <input key={f.name} type="hidden" name={f.name} value={f.value} />
+                ))}
+                <Button
+                  type="submit"
+                  disabled={busy}
+                  className="w-full h-10 rounded-xl text-sm font-bold bg-[#e85d4c] hover:bg-[#e85d4c]/90 text-white"
+                >
+                  {t('payGateway')}
+                </Button>
+              </form>
+            </>
+          )}
+          <div className="flex items-center justify-between gap-3 text-xs text-[#9a9eab]">
+            <span className="inline-flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {t('waiting')}
+            </span>
+            <span className="inline-flex items-center gap-1 font-mono">
+              <Clock className="w-3.5 h-3.5" />
+              {mmss}
+            </span>
+          </div>
+          {resume?.result !== 'success' && (
+            <Button
+              type="button"
+              disabled={busy}
+              onClick={cancel}
+              className="w-full h-9 rounded-xl text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-[#c5c2ba]"
+            >
+              {t('cancelOrder')}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {order?.status === 'pending' && checkout && !checkout.gateway && (
         <div className="grid gap-5 sm:grid-cols-[220px_1fr] items-start">
           {checkout.qr_url && qrFailedUrl !== checkout.qr_url ? (
             // External image on purpose: the QR is rendered by SePay's VietQR
@@ -195,7 +279,7 @@ export function PaymentCheckout({
               alt={t('qrAlt')}
               width={220}
               height={220}
-              onError={() => setQrFailedUrl(checkout.qr_url)}
+              onError={() => setQrFailedUrl(checkout.qr_url ?? null)}
               className="w-full max-w-[220px] mx-auto rounded-2xl bg-white p-2"
             />
           ) : checkout.qr_url ? (
@@ -205,11 +289,11 @@ export function PaymentCheckout({
           ) : null}
           <div className="space-y-3">
             <div className="rounded-2xl border border-white/10 bg-black/30 px-4">
-              <CopyRow label={t('bank')} value={checkout.bank_name} />
-              <CopyRow label={t('account')} value={checkout.bank_account} />
+              <CopyRow label={t('bank')} value={checkout.bank_name ?? ''} />
+              <CopyRow label={t('account')} value={checkout.bank_account ?? ''} />
               {checkout.bank_holder && <CopyRow label={t('holder')} value={checkout.bank_holder} />}
               <CopyRow label={t('amount')} value={String(order.amount_vnd)} />
-              <CopyRow label={t('content')} value={checkout.transfer_content} strong />
+              <CopyRow label={t('content')} value={checkout.transfer_content ?? ''} strong />
             </div>
             <p className="text-xs text-amber-300">{t('contentWarning')}</p>
             <div className="flex items-center justify-between gap-3 text-xs text-[#9a9eab]">
@@ -260,9 +344,13 @@ export function PaymentCheckout({
             <p className="text-sm text-[#c5c2ba]">
               {order.status === 'needs_review'
                 ? t('reviewBody')
-                : order.status === 'cancelled'
-                  ? t('cancelledBody')
-                  : t('expiredBody')}
+                : order.status === 'cancelled' && resume?.result === 'cancel'
+                  ? t('gatewayCancelled')
+                  : order.status === 'cancelled' && resume?.result === 'error'
+                    ? t('gatewayError')
+                    : order.status === 'cancelled'
+                      ? t('cancelledBody')
+                      : t('expiredBody')}
             </p>
           </div>
           {order.status !== 'needs_review' && (
@@ -272,7 +360,7 @@ export function PaymentCheckout({
               onClick={start}
               className="h-9 rounded-xl text-xs font-bold bg-[#e85d4c] hover:bg-[#e85d4c]/90 text-white"
             >
-              {t('newQr')}
+              {viaGateway ? t('payAgain') : t('newQr')}
             </Button>
           )}
         </div>

@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useFormatter, useTranslations } from 'next-intl'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { GameBackground } from '@/components/game-background'
-import { PaymentCheckout } from '@/components/payment-checkout'
+import { PaymentCheckout, type GatewayReturn } from '@/components/payment-checkout'
 import { ZaloContact } from '@/components/zalo-contact'
 import { authClient } from '@/lib/auth-client'
 import { getMyLicense, type LicenseSnapshot } from '@/app/actions/license'
@@ -15,11 +15,13 @@ import { listPaymentProducts, type PaymentCatalog, type PaymentProduct } from '@
 
 /**
  * Public price list. Two ways to buy:
- *  - QR checkout (SePay), when the server says checkout is open;
+ *  - online checkout (SePay bank QR, or SePay's hosted payment page), when the
+ *    server says checkout is open. The hosted page sends the buyer back to
+ *    /pricing?order=<code>&result=success|error|cancel;
  *  - Zalo, always shown when configured — a link to a person, nothing more.
  * Prices, terms and the Zalo link all come from the API.
  */
-export default function PricingPage() {
+function PricingContent() {
   const t = useTranslations('payment')
   const format = useFormatter()
   const router = useRouter()
@@ -27,6 +29,17 @@ export default function PricingPage() {
   const [license, setLicense] = useState<LicenseSnapshot | null>(null)
   const [email, setEmail] = useState<string | null>(null)
   const [selected, setSelected] = useState<PaymentProduct | null>(null)
+  const params = useSearchParams()
+  const [returned, setReturned] = useState<GatewayReturn | null>(() => {
+    const code = params.get('order')
+    if (!code || !/^[A-Za-z0-9]{4,16}$/.test(code)) return null
+    const r = params.get('result')
+    return { orderCode: code, result: r === 'success' || r === 'error' || r === 'cancel' ? r : undefined }
+  })
+  const closeReturned = () => {
+    setReturned(null)
+    router.replace('/pricing')
+  }
 
   useEffect(() => {
     ;(async () => {
@@ -68,11 +81,15 @@ export default function PricingPage() {
 
             {!catalog && <p className="text-sm text-[#9a9eab]">{t('loading')}</p>}
 
+            {catalog && !selected && returned && signedIn && (
+              <PaymentCheckout resume={returned} zaloUrl={zaloUrl} onClose={closeReturned} />
+            )}
+
             {catalog && selected && (
               <PaymentCheckout product={selected} zaloUrl={zaloUrl} onClose={() => setSelected(null)} />
             )}
 
-            {catalog && !selected && catalog.products.length > 0 && (
+            {catalog && !selected && !(returned && signedIn) && catalog.products.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {catalog.products.map((p) => (
                   <div key={p.id} className="rounded-2xl border border-white/10 bg-black/30 p-5 flex flex-col gap-3">
@@ -111,5 +128,15 @@ export default function PricingPage() {
         </div>
       </div>
     </GameBackground>
+  )
+}
+
+// useSearchParams needs a Suspense boundary for the static prerender; the
+// return parameters only exist in the browser anyway.
+export default function PricingPage() {
+  return (
+    <Suspense fallback={null}>
+      <PricingContent />
+    </Suspense>
   )
 }
