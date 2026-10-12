@@ -5,6 +5,7 @@ import { mapGameSession } from '@/lib/game-session'
 import { revalidatePath } from 'next/cache'
 import { getTranslations } from 'next-intl/server'
 import type { BrandingPatch } from '@/lib/theme'
+import { publicErrorMessage } from '@/lib/api-errors'
 
 // Quiz CRUD
 export async function createQuiz(title: string, description?: string) {
@@ -38,8 +39,8 @@ export async function getMyQuizzes() {
       quiz.question_count ??
         (Array.isArray(quiz.questions) ? quiz.questions.length : 0)
     ),
-    isPublic: !!quiz.is_public,
-    allowEdit: !!quiz.allow_edit,
+    // How many people the owner shared it with, for the card badge.
+    collaboratorCount: Number(quiz.collaborator_count ?? 0),
   }))
 }
 
@@ -81,49 +82,125 @@ export async function getQuizById(quizId: string) {
     description: quiz.description,
     themeConfig: quiz.theme_config,
     questions: formattedQuestions,
-    // Sharing state and what this viewer may do with it. The server decides;
-    // the UI only reflects the answer, so a hidden button is never the only
-    // thing standing between a reader and someone else's quiz.
-    isPublic: !!quiz.is_public,
-    allowEdit: !!quiz.allow_edit,
+    // What this viewer may do. The server decides; the UI only reflects the
+    // answer, so a hidden button is never the only thing standing between an
+    // invited editor and an owner-only action.
+    //
     // Defaulting to true when the field is absent keeps an older API from
     // locking a host out of their own quiz during a rolling deploy. The server
     // is the authority either way — it rejects a write the viewer may not make.
     isOwner: quiz.is_owner ?? true,
     canEdit: quiz.can_edit ?? true,
     canHost: quiz.can_host ?? true,
+    canCopy: quiz.can_copy ?? true,
+    canShare: quiz.can_share ?? quiz.is_owner ?? true,
+    // Display name of the owner, set only for an invited editor.
+    ownerName: (quiz.owner_name as string | undefined) || '',
     // The row version, handed back on save so two editors cannot overwrite
     // each other silently.
     updatedAt: quiz.updated_at as string | undefined,
   }
 }
 
-/**
- * Publish or unpublish a quiz, and choose whether others may edit the original.
- *
- * Owner only — the API checks independently. Unpublishing clears edit rights
- * server-side, so read the answer back rather than assuming what was sent.
- */
-export async function updateQuizSharing(
-  quizId: string,
-  isPublic: boolean,
-  allowEdit: boolean
-) {
-  const data = await apiRequest(`/quizzes/${quizId}/sharing`, 'PATCH', {
-    is_public: isPublic,
-    allow_edit: allowEdit,
-  })
-  revalidatePath(`/quizzes/${quizId}`)
-  revalidatePath('/dashboard')
-  return { isPublic: !!data.is_public, allowEdit: !!data.allow_edit }
+// Sharing by email --------------------------------------------------------
+//
+// These return failures as data instead of throwing: Next redacts a thrown
+// Server Action error in production, and here the reason is the whole answer
+// ("needs Pro", "limit reached", "not an email address").
+
+export type QuizCollaborator = {
+  id: number
+  email: string
+  role: string
+  status: 'active' | 'pending'
+  createdAt: string
 }
 
-/** Quizzes other hosts have published. Paginated: this list is platform-wide. */
-export async function getSharedQuizzes(search = '', page = 1, pageSize = 20) {
+export type QuizSharingState = {
+  collaborators: QuizCollaborator[]
+  /** The owner's plan includes sharing. */
+  canShare: boolean
+  /** Max editors per quiz on the owner's plan; negative = unlimited. */
+  limit: number
+}
+
+type Result<T> = ({ ok: true } & T) | { ok: false; error: string }
+
+async function sharingFailure(error: unknown): Promise<{ ok: false; error: string }> {
+  const t = await getTranslations('editor')
+  return { ok: false, error: publicErrorMessage(error, t('shareFailed')) }
+}
+
+function mapCollaborator(c: any): QuizCollaborator {
+  return {
+    id: Number(c.id),
+    email: String(c.email || ''),
+    role: String(c.role || 'editor'),
+    status: c.status === 'active' ? 'active' : 'pending',
+    createdAt: String(c.created_at || ''),
+  }
+}
+
+/** Who the quiz is shared with. Owner only — the API answers 404 otherwise. */
+export async function getQuizCollaborators(quizId: string): Promise<Result<QuizSharingState>> {
+  try {
+    const data = await apiRequest(`/quizzes/${quizId}/collaborators`)
+    return {
+      ok: true,
+      collaborators: (Array.isArray(data?.collaborators) ? data.collaborators : []).map(mapCollaborator),
+      canShare: !!data?.can_share,
+      limit: Number(data?.limit ?? 0),
+    }
+  } catch (e) {
+    return sharingFailure(e)
+  }
+}
+
+/** Give one email address edit access. Idempotent per address. */
+export async function addQuizCollaborator(
+  quizId: string,
+  email: string
+): Promise<Result<{ collaborator: QuizCollaborator }>> {
+  const t = await getTranslations('editor')
+  const trimmed = email.trim()
+  if (!trimmed) return { ok: false, error: t('shareEmailRequired') }
+  try {
+    const data = await apiRequest(`/quizzes/${quizId}/collaborators`, 'POST', { email: trimmed })
+    revalidatePath('/dashboard')
+    return { ok: true, collaborator: mapCollaborator(data) }
+  } catch (e) {
+    return sharingFailure(e)
+  }
+}
+
+/** Owner revokes one editor. Takes effect on the editor's next request. */
+export async function removeQuizCollaborator(quizId: string, collaboratorId: number): Promise<Result<{}>> {
+  try {
+    await apiRequest(`/quizzes/${quizId}/collaborators/${collaboratorId}`, 'DELETE')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    return sharingFailure(e)
+  }
+}
+
+/** An editor gives up their own access. */
+export async function leaveSharedQuiz(quizId: string): Promise<Result<{}>> {
+  try {
+    await apiRequest(`/quizzes/${quizId}/collaborators/me`, 'DELETE')
+    revalidatePath('/dashboard')
+    return { ok: true }
+  } catch (e) {
+    return sharingFailure(e)
+  }
+}
+
+/** Quizzes other owners invited the caller to edit. */
+export async function getSharedWithMe(search = '', page = 1, pageSize = 20) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (search.trim()) params.set('q', search.trim())
 
-  const data = await apiRequest(`/quizzes/shared?${params.toString()}`)
+  const data = await apiRequest(`/quizzes/shared-with-me?${params.toString()}`)
   const list = Array.isArray(data?.quizzes) ? data.quizzes : []
   return {
     quizzes: list.map((quiz: any) => ({
@@ -131,8 +208,9 @@ export async function getSharedQuizzes(search = '', page = 1, pageSize = 20) {
       title: quiz.title,
       description: quiz.description,
       questionCount: Number(quiz.question_count ?? 0),
-      allowEdit: !!quiz.allow_edit,
-      isOwner: !!quiz.is_owner,
+      // False while the owner's plan does not include sharing: the quiz is
+      // listed so the editor knows why it stopped opening.
+      active: quiz.active !== false,
       authorName: quiz.author_name || '',
       createdAt: new Date(quiz.created_at),
     })),
@@ -145,13 +223,17 @@ export async function getSharedQuizzes(search = '', page = 1, pageSize = 20) {
 /**
  * Deep-copy a quiz (metadata + questions) into a new quiz owned by the caller.
  *
- * Works on any quiz the caller may read, which since sharing includes other
- * people's public ones — that is how somebody "edits" a shared quiz: they take
- * their own copy. The copy is independent, so unsharing the original later does
- * not reach it.
+ * Owner only in practice: the API reports can_copy=false to an invited editor,
+ * because a copy would outlive the owner revoking their access. The API cannot
+ * stop someone who can read a quiz from retyping it, so this is a guard against
+ * the easy path, not a security boundary.
  */
 export async function duplicateQuiz(quizId: string) {
   const source = await getQuizById(quizId)
+  if (!source.canCopy) {
+    const t = await getTranslations('editor')
+    throw new Error(t('copyNotAllowed'))
+  }
   const created = await createQuiz(
     `${source.title} (Copy)`,
     source.description || undefined

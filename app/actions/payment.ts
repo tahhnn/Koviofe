@@ -49,12 +49,23 @@ export type PaymentOrder = {
   created_at: string
 }
 
+/**
+ * Signed form for SePay's hosted payment page (PAYMENT_PROVIDER=sepay_pg).
+ * Fields must be posted in this order: SePay checks the signature against it.
+ */
+export type GatewayForm = {
+  action: string
+  fields: { name: string; value: string }[]
+}
+
+/** Either the bank-transfer details or, when the gateway is on, its form. */
 export type CheckoutInfo = {
-  bank_name: string
-  bank_account: string
+  bank_name?: string
+  bank_account?: string
   bank_holder?: string
-  transfer_content: string
-  qr_url: string
+  transfer_content?: string
+  qr_url?: string
+  gateway?: GatewayForm
 }
 
 /** checkout is present only while the order is pending. */
