@@ -23,13 +23,14 @@ import {
   updateQuizExplanationDuration,
   importQuestionsFromQuiz,
   updateQuizBranding,
-  updateQuizSharing,
   duplicateQuiz,
+  leaveSharedQuiz,
 } from '@/app/actions/quizzes'
+import { QuizShareDialog } from '@/components/quiz-share-dialog'
 import { ExplanationEditor } from '@/components/explanation-editor'
 import { GameBackground } from '@/components/game-background'
 import { useToast } from '@/components/ui/toast'
-import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus, Settings, SlidersHorizontal, Eye, Globe } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, ImagePlus, Check, X, FileQuestion, CopyPlus, Settings, SlidersHorizontal, Eye, Users, LogOut } from 'lucide-react'
 import { QuizBrandingPanel } from '@/components/quiz-branding-panel'
 import { parseQuizTheme, type BrandingPatch } from '@/lib/theme'
 import { getMyLicense } from '@/app/actions/license'
@@ -81,19 +82,22 @@ export default function QuizEditorPage() {
   const [editTitle, setEditTitle] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [pinAspect, setPinAspect] = useState<number | null>(null)
-  const [sharingSaving, setSharingSaving] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
 
   // What this viewer may do, as the server reported it. The page mirrors the
   // answer; it never decides. Undefined means an API that predates sharing, and
   // getQuizById already resolves that to "allowed".
   //
-  // canEdit and isOwner are independent again: a shared quiz its owner opened
-  // for editing gives canEdit without isOwner, and that reader may change the
-  // questions but never the sharing flags or the quiz itself.
+  // canEdit and isOwner are independent: an invited editor gets canEdit
+  // without isOwner, and may change the questions but never host, copy,
+  // delete or share the quiz.
   const canEdit = quiz?.canEdit !== false
   const isOwner = quiz?.isOwner !== false
   const canCopy = quiz?.canCopy !== false
+  const canHost = quiz?.canHost !== false
+  const canShare = quiz?.canShare !== false
 
   /**
    * Guard at the top of every mutating handler.
@@ -548,36 +552,30 @@ export default function QuizEditorPage() {
     }
   }
 
-  /**
-   * Publish / unpublish, and open or close editing of the original.
-   *
-   * Owner only, and the API enforces that independently: this endpoint is the
-   * one place the flags can move, precisely so that edit rights on a shared
-   * quiz can never reach them.
-   */
-  const handleSharingChange = async (nextPublic: boolean, nextAllowEdit: boolean) => {
-    setSharingSaving(true)
-    try {
-      const saved = await updateQuizSharing(quizId, nextPublic, nextAllowEdit)
-      // Take the server's answer rather than the requested one: unpublishing
-      // clears edit rights there, and the toggle must show what actually holds.
-      setQuiz((prev: any) =>
-        prev ? { ...prev, isPublic: saved.isPublic, allowEdit: saved.allowEdit } : prev
-      )
-      toast.success(t('shareSaved'))
-    } catch (error: any) {
-      console.error('Error updating sharing:', error)
-      toast.apiError(error?.message || error, (href) => router.push(href))
-    } finally {
-      setSharingSaving(false)
-    }
+  /** An invited editor gives up their access and goes back to the dashboard. */
+  const handleLeave = () => {
+    toast.confirm(
+      t('leaveConfirm'),
+      async () => {
+        setLeaving(true)
+        const res = await leaveSharedQuiz(quizId)
+        if (!res.ok) {
+          setLeaving(false)
+          toast.error(t('leaveFailed'), res.error)
+          return
+        }
+        toast.success(t('leftQuiz'))
+        router.push('/dashboard')
+      },
+      t('leaveConfirmBody')
+    )
   }
 
   /**
    * Take an independent copy into the reader's own quizzes and open it.
    *
-   * This is the whole answer to "I want to change a shared quiz": the original
-   * keeps exactly one writer, and the reader gets something they fully own.
+   * Owner only: an invited editor gets can_copy=false, because a copy would
+   * outlive the owner revoking their access.
    */
   const handleDuplicate = async () => {
     setDuplicating(true)
@@ -1006,7 +1004,18 @@ export default function QuizEditorPage() {
           </div>
 
           <div className="flex flex-col items-end gap-2 shrink-0 w-full sm:w-auto" data-tour="launch-mode">
-            <div className="w-full sm:w-auto grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            <div className={`w-full sm:w-auto grid ${canHost ? 'grid-cols-3' : 'grid-cols-2'} gap-2 sm:flex sm:flex-wrap sm:justify-end`}>
+              {canShare && (
+                <Button
+                  onClick={() => setShareOpen(true)}
+                  variant="outline"
+                  title={t('shareTitle')}
+                  className="col-span-full sm:col-span-1 border-[#2c313d] bg-transparent text-[#f2f0eb] hover:bg-[#12141a] font-semibold px-4 rounded-xl h-10 text-sm gap-1.5"
+                >
+                  <Users className="w-4 h-4" />
+                  {t('share')}
+                </Button>
+              )}
               <Button
                 onClick={openImportPanel}
                 disabled={saving || !canEdit}
@@ -1017,6 +1026,8 @@ export default function QuizEditorPage() {
                 <CopyPlus className="w-4 h-4" />
                 {t('addFromQuiz')}
               </Button>
+              {canHost && (
+              <>
               <Button
                 onClick={() => handleStartGame('classic')}
                 disabled={saving || quiz.questions?.length === 0}
@@ -1034,10 +1045,14 @@ export default function QuizEditorPage() {
               >
                 {saving ? 'Launching...' : 'Solo'}
               </Button>
+              </>
+              )}
             </div>
-            <p className="text-xs text-[#9a9eab] hidden sm:block">
-              {t('paceHint')}
-            </p>
+            {canHost && (
+              <p className="text-xs text-[#9a9eab] hidden sm:block">
+                {t('paceHint')}
+              </p>
+            )}
           </div>
         </div>
       </header>
@@ -1046,23 +1061,18 @@ export default function QuizEditorPage() {
         <div className="border-b border-sky-500/20 bg-sky-500/10 px-4 sm:px-6 py-3">
           <div className="container mx-auto max-w-7xl flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between text-sm text-sky-200">
             <span className="flex items-start sm:items-center gap-2.5">
-              <Globe className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
-              <span>{t('sharedEditableBanner')}</span>
+              <Users className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+              <span>{t('sharedEditableBanner', { owner: quiz.ownerName || t('ownerFallback') })}</span>
             </span>
-            {/* Offered here too: editing the shared original is allowed, but
-                somebody who only wants their own version should not have to go
-                back to the dashboard to get one. */}
-            {canCopy && (
-              <Button
-                size="sm"
-                onClick={handleDuplicate}
-                disabled={duplicating}
-                className="shrink-0 bg-sky-500/20 hover:bg-sky-500/30 text-sky-100 border border-sky-500/30 font-bold text-xs rounded-xl h-10 sm:h-9 flex items-center gap-1.5"
-              >
-                <CopyPlus className="w-3.5 h-3.5" />
-                {duplicating ? t('duplicating') : t('duplicateToMine')}
-              </Button>
-            )}
+            <Button
+              size="sm"
+              onClick={handleLeave}
+              disabled={leaving}
+              className="shrink-0 bg-sky-500/20 hover:bg-sky-500/30 text-sky-100 border border-sky-500/30 font-bold text-xs rounded-xl h-10 sm:h-9 flex items-center gap-1.5"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              {leaving ? t('leaving') : t('leaveQuiz')}
+            </Button>
           </div>
         </div>
       )}
@@ -1642,59 +1652,6 @@ export default function QuizEditorPage() {
                 />
               </div>
 
-              {isOwner && (
-                <div className="border-t border-[#2c313d] pt-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-[#9a9eab]" />
-                    <h3 className="text-sm font-semibold text-[#f2f0eb]">{t('shareTitle')}</h3>
-                  </div>
-                  <p className="text-xs text-[#9a9eab] leading-relaxed">{t('shareHint')}</p>
-
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={!!quiz.isPublic}
-                      disabled={sharingSaving}
-                      onChange={(e) => handleSharingChange(e.target.checked, !!quiz.allowEdit)}
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-[#e85d4c] cursor-pointer"
-                    />
-                    <span className="text-sm text-[#c5c2ba]">{t('sharePublic')}</span>
-                  </label>
-
-                  {quiz.isPublic && (
-                    <>
-                      <div className="pl-7 space-y-1.5">
-                        <p className="text-xs text-amber-300/80 leading-relaxed">
-                          {t('shareAnswersWarning')}
-                        </p>
-                        {/* Said plainly because it is the one part of sharing
-                            that cannot be undone: unsharing stops new copies,
-                            it does not reach the ones already taken. */}
-                        <p className="text-xs text-amber-300/80 leading-relaxed">
-                          {t('shareCopyWarning')}
-                        </p>
-                      </div>
-
-                      <label className="flex items-start gap-3 cursor-pointer pl-7">
-                        <input
-                          type="checkbox"
-                          checked={!!quiz.allowEdit}
-                          disabled={sharingSaving}
-                          onChange={(e) => handleSharingChange(true, e.target.checked)}
-                          className="mt-0.5 h-4 w-4 shrink-0 accent-[#e85d4c] cursor-pointer"
-                        />
-                        <span className="text-sm text-[#c5c2ba]">{t('shareAllowEdit')}</span>
-                      </label>
-                      {quiz.allowEdit && (
-                        <p className="text-xs text-amber-300/80 leading-relaxed pl-14">
-                          {t('shareAllowEditWarning')}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-
               <div className="border-t border-[#2c313d] pt-4">
                 <QuizBrandingPanel
                   theme={quizTheme}
@@ -1722,6 +1679,10 @@ export default function QuizEditorPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {canShare && shareOpen && (
+        <QuizShareDialog quizId={quizId} onClose={() => setShareOpen(false)} />
       )}
 
       <GiphyPicker

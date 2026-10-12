@@ -118,13 +118,13 @@ const rules: ErrorRule[] = [
     }),
   },
   {
-    // Sharing: only the owner may change a shared quiz, so the way forward is
-    // always to duplicate it. Sending them to the dashboard would lose the
-    // quiz they are looking at, so this one stays put.
-    test: (m) => /shared quiz is read-only|chỉ cho xem — hãy nhân bản/i.test(m),
+    // Sharing: an invited editor asked for something only the owner may do
+    // (host, duplicate, delete, share). The editor stays on the quiz they are
+    // working on rather than being sent to the dashboard.
+    test: (m) => /only the quiz owner can do this|chỉ chủ quiz mới làm được/i.test(m),
     resolve: () => ({
-      titleKey: 'duplicateInsteadTitle',
-      descriptionKey: 'duplicateInsteadBody',
+      titleKey: 'ownerOnlyTitle',
+      descriptionKey: 'ownerOnlyBody',
     }),
   },
   {

@@ -20,6 +20,8 @@ export type PricingPlan = {
   allow_export_logs: boolean
   allow_priority_support: boolean
   allow_remove_watermark: boolean
+  allow_quiz_sharing?: boolean
+  max_collaborators_per_quiz?: number
   is_active?: boolean
 }
 
@@ -42,6 +44,8 @@ export type LicenseSnapshot = {
     allow_export_logs: boolean
     allow_priority_support: boolean
     allow_remove_watermark: boolean
+    allow_quiz_sharing?: boolean
+    max_collaborators_per_quiz?: number
   }
   usage: {
     quizzes: number

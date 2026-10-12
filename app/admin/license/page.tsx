@@ -363,11 +363,13 @@ export default function AdminLicensePage() {
         max_templates: Number(draft.max_templates),
         max_concurrent_rooms: Number(draft.max_concurrent_rooms),
         max_questions_per_quiz: Number(draft.max_questions_per_quiz),
+        max_collaborators_per_quiz: Number(draft.max_collaborators_per_quiz ?? 0),
         allow_player_paced: !!draft.allow_player_paced,
         allow_custom_branding: !!draft.allow_custom_branding,
         allow_export_logs: !!draft.allow_export_logs,
         allow_priority_support: !!draft.allow_priority_support,
         allow_remove_watermark: !!draft.allow_remove_watermark,
+        allow_quiz_sharing: !!draft.allow_quiz_sharing,
         is_active: draft.is_active !== false,
       })
       flash(t('planSaved', { plan: planId }))
@@ -896,6 +898,7 @@ export default function AdminLicensePage() {
                             ['max_templates', t('maxTemplatesLabel')],
                             ['max_concurrent_rooms', t('concurrentRoomsLabel')],
                             ['max_questions_per_quiz', t('questionsPerQuizLabel')],
+                            ['max_collaborators_per_quiz', t('collaboratorsPerQuizLabel')],
                           ] as const
                         ).map(([key, label]) => (
                           <div key={key}>
@@ -919,6 +922,7 @@ export default function AdminLicensePage() {
                             ['allow_export_logs', t('featExportLogs')],
                             ['allow_priority_support', t('featPrioritySupport')],
                             ['allow_remove_watermark', t('featRemoveWatermark')],
+                            ['allow_quiz_sharing', t('featQuizSharing')],
                           ] as const
                         ).map(([key, label]) => (
                           <label key={key} className="flex items-center gap-2 cursor-pointer min-h-10 sm:min-h-0 py-1 sm:py-0">

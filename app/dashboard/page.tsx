@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { authClient } from '@/lib/auth-client'
-import { getMyQuizzes, createQuiz, deleteQuiz, getDashboardStats, createQuizFromMockTemplate, duplicateQuiz, updateQuiz, getSharedQuizzes } from '@/app/actions/quizzes'
+import { getMyQuizzes, createQuiz, deleteQuiz, getDashboardStats, createQuizFromMockTemplate, duplicateQuiz, updateQuiz, getSharedWithMe } from '@/app/actions/quizzes'
 import { GameBackground } from '@/components/game-background'
 import { useToast } from '@/components/ui/toast'
 import { Input } from '@/components/ui/input'
@@ -32,8 +32,6 @@ import {
   Calendar,
   Copy,
   X,
-  Globe,
-  Eye,
   Users2,
   Gift,
   ChevronDown,
@@ -87,9 +85,8 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState<'list' | 'shared' | 'quick-create'>('list')
 
-  // Shared quizzes are paginated and searched on the server, unlike the host's
-  // own list: this one is the whole platform's, so it cannot be filtered in
-  // the browser off a single fetch.
+  // Quizzes other owners invited this user to edit. Paginated and searched on
+  // the server, like the API serves them.
   const [sharedQuizzes, setSharedQuizzes] = useState<any[]>([])
   const [sharedTotal, setSharedTotal] = useState(0)
   const [sharedPage, setSharedPage] = useState(1)
@@ -239,7 +236,7 @@ export default function DashboardPage() {
     setSharedLoading(true)
     const timer = setTimeout(async () => {
       try {
-        const data = await getSharedQuizzes(sharedSearch, sharedPage, SHARED_PAGE_SIZE)
+        const data = await getSharedWithMe(sharedSearch, sharedPage, SHARED_PAGE_SIZE)
         if (cancelled) return
         setSharedQuizzes(data.quizzes)
         setSharedTotal(data.total)
@@ -520,7 +517,7 @@ export default function DashboardPage() {
                     : 'text-gray-400 hover:text-white'
                 }`}
               >
-                <Globe className="w-3.5 h-3.5" />
+                <Users2 className="w-3.5 h-3.5" />
                 {t('sharedQuizzes')}
               </button>
               <button
@@ -619,12 +616,12 @@ export default function DashboardPage() {
                             <Gamepad2 className="w-5 h-5 text-purple-400" />
                           </div>
                           <div className="flex items-center gap-2">
-                            {quiz.isPublic && (
+                            {quiz.collaboratorCount > 0 && (
                               <span
-                                title={quiz.allowEdit ? t('sharedEditable') : t('sharedViewOnly')}
+                                title={t('sharedWithCount', { count: quiz.collaboratorCount })}
                                 className="text-[10px] uppercase font-extrabold tracking-widest px-2 py-1 rounded-lg border text-sky-300 bg-sky-500/10 border-sky-500/20 flex items-center gap-1"
                               >
-                                <Globe className="w-3 h-3" />
+                                <Users2 className="w-3 h-3" />
                                 {t('shared')}
                               </span>
                             )}
@@ -705,7 +702,7 @@ export default function DashboardPage() {
               if (sharedQuizzes.length === 0) {
                 return (
                   <div className="bg-white/5 border border-white/5 rounded-3xl p-6 sm:p-10 lg:p-16 text-center backdrop-blur-sm shadow-xl flex flex-col items-center justify-center space-y-6">
-                    <Globe className="w-16 h-16 text-indigo-500/40 mx-auto" />
+                    <Users2 className="w-16 h-16 text-indigo-500/40 mx-auto" />
                     <div className="space-y-2">
                       <h3 className="text-xl font-bold text-white">{t('noSharedQuizzes')}</h3>
                       <p className="text-gray-400 text-sm max-w-sm leading-relaxed mx-auto">
@@ -729,7 +726,7 @@ export default function DashboardPage() {
                         <div className="space-y-3">
                           <div className="flex items-center justify-between gap-2">
                             <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
-                              <Globe className="w-5 h-5 text-sky-400" />
+                              <Users2 className="w-5 h-5 text-sky-400" />
                             </div>
                             <span className="text-[10px] uppercase font-extrabold tracking-widest text-indigo-400">
                               {quiz.questionCount} Questions
@@ -742,23 +739,19 @@ export default function DashboardPage() {
                             </p>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
-                            {/* Says up front whether opening this leads to an
-                                editor or a reader, so nobody discovers it on
-                                the first keystroke. */}
+                            {/* A suspended grant is still listed, so the editor
+                                learns why the quiz stopped opening instead of
+                                watching it vanish. */}
                             <span
+                              title={quiz.active ? undefined : t('sharedSuspendedHint')}
                               className={`text-[10px] uppercase font-extrabold tracking-widest px-2 py-1 rounded-lg border ${
-                                quiz.allowEdit
+                                quiz.active
                                   ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
-                                  : 'text-gray-400 bg-white/5 border-white/10'
+                                  : 'text-amber-300 bg-amber-500/10 border-amber-500/20'
                               }`}
                             >
-                              {quiz.allowEdit ? t('sharedEditable') : t('sharedViewOnly')}
+                              {quiz.active ? t('sharedEditable') : t('sharedSuspended')}
                             </span>
-                            {quiz.isOwner && (
-                              <span className="text-[10px] uppercase font-extrabold tracking-widest px-2 py-1 rounded-lg border text-purple-300 bg-purple-500/10 border-purple-500/20">
-                                {t('yourQuiz')}
-                              </span>
-                            )}
                           </div>
                         </div>
 
@@ -768,29 +761,26 @@ export default function DashboardPage() {
                             {t('byAuthor', { name: quiz.authorName })}
                           </span>
                           <div className="flex gap-2 justify-end">
-                            <Link href={`/quizzes/${quiz.id}`}>
+                            {quiz.active ? (
+                              <Link href={`/quizzes/${quiz.id}`}>
+                                <Button
+                                  size="sm"
+                                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md border-none h-10 sm:h-9 flex items-center gap-1"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                  {t('open')}
+                                </Button>
+                              </Link>
+                            ) : (
                               <Button
                                 size="sm"
-                                variant="outline"
-                                className="border-white/10 hover:bg-white/5 text-xs font-bold text-gray-300 hover:text-white rounded-xl h-10 sm:h-9 flex items-center gap-1"
+                                disabled
+                                className="bg-white/5 text-gray-500 font-bold text-xs rounded-xl border border-white/10 h-10 sm:h-9 flex items-center gap-1"
                               >
-                                {quiz.allowEdit ? <Edit3 className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                <Edit3 className="w-3.5 h-3.5" />
                                 {t('open')}
                               </Button>
-                            </Link>
-                            {/* The primary action, because taking a copy is
-                                how somebody makes a shared quiz their own —
-                                the original stays read-only for everyone but
-                                its author. */}
-                            <Button
-                              size="sm"
-                              disabled={actionLoading === `dup-${quiz.id}`}
-                              onClick={() => handleDuplicateQuiz(quiz.id)}
-                              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md border-none h-10 sm:h-9 flex items-center gap-1"
-                            >
-                              <Copy className="w-3.5 h-3.5" />
-                              {actionLoading === `dup-${quiz.id}` ? '…' : t('duplicate')}
-                            </Button>
+                            )}
                           </div>
                         </div>
                       </div>
