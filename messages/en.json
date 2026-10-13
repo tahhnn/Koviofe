@@ -390,7 +390,13 @@
       "arm64": "Apple M1/M2/M3… chip",
       "x86": "32-bit"
     },
-    "buildFor": "For {platform}"
+    "buildFor": "For {platform}",
+    "contactTitle": "Get a licence",
+    "contactBody": "The app is free to download; running it at an event needs a licence. Call us for advice and a licence.",
+    "callNow": "Call now",
+    "chatZalo": "Chat on Zalo",
+    "sendEmail": "Send email",
+    "copyPhone": "Click to copy the number"
   },
   "host": {
     "loading": "Loading room…",

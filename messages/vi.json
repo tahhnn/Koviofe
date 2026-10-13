@@ -389,7 +389,13 @@
       "arm64": "chip Apple M1/M2/M3…",
       "x86": "32-bit"
     },
-    "buildFor": "Bản cho {platform}"
+    "buildFor": "Bản cho {platform}",
+    "contactTitle": "Liên hệ cấp license",
+    "contactBody": "Ứng dụng tải miễn phí; để dùng tại sự kiện bạn cần license. Gọi cho chúng tôi để được tư vấn và cấp license.",
+    "callNow": "Gọi ngay",
+    "chatZalo": "Nhắn Zalo",
+    "sendEmail": "Gửi email",
+    "copyPhone": "Bấm để sao chép số"
   },
   "host": {
     "loading": "Đang tải phòng…",

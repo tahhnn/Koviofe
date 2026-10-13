@@ -3,7 +3,7 @@
 import { getSession } from '@/lib/session'
 import { readLuckyDrawRelease, type LuckyDrawRelease } from '@/lib/luckydraw'
 
-export type { LuckyDrawRelease, LuckyDrawBuild, LuckyDrawPlatform } from '@/lib/luckydraw'
+export type { LuckyDrawRelease, LuckyDrawBuild, LuckyDrawContact, LuckyDrawPlatform } from '@/lib/luckydraw'
 
 /**
  * What the dashboard's LuckyDraw tab shows.

@@ -46,7 +46,23 @@ export type LuckyDrawRelease = {
   notes?: string
   /** Optional external page (store listing, changelog) set in app.json. */
   homepage?: string
+  /** Who to call for a licence, from app.json; absent when not configured. */
+  licenseContact?: LuckyDrawContact
   builds: LuckyDrawBuild[]
+}
+
+/**
+ * How a buyer reaches a person to get a LuckyDraw licence. Lives in app.json
+ * next to the builds, so changing the number is a file edit, not a release.
+ */
+export type LuckyDrawContact = {
+  /** Display form, e.g. "0926 175 559". */
+  phone?: string
+  /** Digits only (a leading + kept), for the tel: link. */
+  phoneHref?: string
+  /** https://zalo.me/... chat link, only when set explicitly. */
+  zaloUrl?: string
+  email?: string
 }
 
 /** Extensions a person can actually install or run. */
@@ -84,6 +100,8 @@ type AppManifest = {
   version?: string
   notes?: string
   homepage?: string
+  /** { "phone": "0926175559", "zalo": "https://zalo.me/…", "email": "…" } */
+  licenseContact?: { phone?: unknown; zalo?: unknown; email?: unknown }
   /** Per-file overrides, keyed by file name — the escape hatch for anything
    *  the name-based guesses below get wrong. */
   files?: Record<string, ManifestFile>
@@ -191,6 +209,31 @@ async function readManifest(dir: string): Promise<AppManifest> {
   }
 }
 
+/**
+ * Validates the contact block from app.json. The file is hand-edited, so a
+ * value that is not a plausible phone, Zalo link or email is dropped rather
+ * than rendered as a broken or unsafe link.
+ */
+export function parseLicenseContact(raw: AppManifest['licenseContact']): LuckyDrawContact | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const out: LuckyDrawContact = {}
+  if (typeof raw.phone === 'string') {
+    const href = raw.phone.trim().replace(/(?!^\+)[^\d]/g, '')
+    if (/^\+?\d{8,15}$/.test(href)) {
+      out.phoneHref = href
+      // Vietnamese 10-digit mobile reads as 4-3-3; anything else stays as typed.
+      out.phone = /^0\d{9}$/.test(href) ? `${href.slice(0, 4)} ${href.slice(4, 7)} ${href.slice(7)}` : raw.phone.trim()
+    }
+  }
+  if (typeof raw.zalo === 'string' && /^https:\/\/zalo\.me\/[\w.-]+$/.test(raw.zalo.trim())) {
+    out.zaloUrl = raw.zalo.trim()
+  }
+  if (typeof raw.email === 'string' && /^[^\s@<>]+@[^\s@<>]+\.[a-z]{2,}$/i.test(raw.email.trim())) {
+    out.email = raw.email.trim()
+  }
+  return out.phoneHref || out.zaloUrl || out.email ? out : undefined
+}
+
 export async function readLuckyDrawRelease(): Promise<LuckyDrawRelease> {
   const dir = luckyDrawDir()
 
@@ -202,6 +245,7 @@ export async function readLuckyDrawRelease(): Promise<LuckyDrawRelease> {
   }
 
   const manifest = await readManifest(dir)
+  const licenseContact = parseLicenseContact(manifest.licenseContact)
   const base = downloadBase()
   const builds: LuckyDrawBuild[] = []
 
@@ -246,6 +290,7 @@ export async function readLuckyDrawRelease(): Promise<LuckyDrawRelease> {
     version: manifest.version ?? builds.map((b) => b.version).find(Boolean),
     notes: manifest.notes,
     homepage: manifest.homepage,
+    licenseContact,
     builds,
   }
 }
