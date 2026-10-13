@@ -1234,7 +1234,7 @@
     "reason_amount_mismatch": "Sai số tiền",
     "reason_late_payment": "Tiền về sau khi hết hạn",
     "reason_duplicate_payment": "Chuyển trùng",
-    "confirm": "Xác nhận",
+    "confirm": "Đã nhận tiền?",
     "cancel": "Huỷ",
     "confirmAmount": "Số tiền thực nhận (VND)",
     "confirmRef": "Mã GD ngân hàng",
@@ -1279,7 +1279,8 @@
     "reconcileHint": "Lấy giao dịch 2 ngày gần nhất từ SePay và ghi những giao dịch webhook bị lỡ",
     "reconcileDone": "Đối soát xong: SePay trả {fetched} giao dịch, vớt {recovered} giao dịch bị lỡ ({paid} đã kích hoạt, {review} cần xử lý)",
     "codeRedeemedBy": "Đã kích hoạt: {email}",
-    "codeNotRedeemed": "Mã chưa được kích hoạt"
+    "codeNotRedeemed": "Mã chưa được kích hoạt",
+    "confirmHint": "Chỉ dùng khi tiền đã về tài khoản nhưng đơn không tự xác nhận (sai số tiền, chuyển trễ, SePay không báo về). Xác nhận sẽ tạo mã kích hoạt cho khách."
   },
   "forgot": {
     "title": "Đặt lại mật khẩu",
