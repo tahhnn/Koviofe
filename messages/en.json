@@ -1199,7 +1199,9 @@
     "contactButton": "Talk to us",
     "higherPlanActive": "You have a higher plan with time left.",
     "goDashboard": "Go to dashboard",
-    "viewMyPlan": "View my plan"
+    "viewMyPlan": "View my plan",
+    "backToDashboard": "Back to dashboard",
+    "backToHome": "Back to home"
   },
   "adminPayments": {
     "checkoutTitle": "QR checkout (SePay)",

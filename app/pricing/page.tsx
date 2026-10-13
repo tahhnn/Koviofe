@@ -1,13 +1,15 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
-import { Check, MessageCircle, X } from 'lucide-react'
+import { ArrowLeft, Check, MessageCircle, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useFormatter, useTranslations } from 'next-intl'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { GameBackground } from '@/components/game-background'
+import { BrandMark } from '@/components/brand-mark'
+import { LanguageSwitcher } from '@/components/language-switcher'
 import { PaymentCheckout, type GatewayReturn } from '@/components/payment-checkout'
 import { ZaloContact } from '@/components/zalo-contact'
 import { authClient } from '@/lib/auth-client'
@@ -33,6 +35,9 @@ function PricingContent() {
   const [plans, setPlans] = useState<PricingPlan[]>([])
   const [license, setLicense] = useState<LicenseSnapshot | null>(null)
   const [email, setEmail] = useState<string | null>(null)
+  // The back button waits for the session read: "dashboard" for a host,
+  // "home" for a visitor, never one flashing into the other.
+  const [sessionRead, setSessionRead] = useState(false)
   const [selected, setSelected] = useState<PaymentProduct | null>(null)
   const params = useSearchParams()
   const [returned, setReturned] = useState<GatewayReturn | null>(() => {
@@ -50,6 +55,7 @@ function PricingContent() {
     ;(async () => {
       const session = await authClient.getSession()
       setEmail(session?.user?.email ?? null)
+      setSessionRead(true)
       const [c, p, me] = await Promise.all([
         listPaymentProducts(),
         listPricingPlans(),
@@ -86,6 +92,26 @@ function PricingContent() {
 
   return (
     <GameBackground variant="auth">
+      {/* Same bar as /luckydraw: the price list is a detour, so the way back
+          is always on screen, not only after a purchase. */}
+      <header className="border-b border-white/5 bg-[#080c14]/60 backdrop-blur-xl sticky top-0 z-50">
+        <div className="container mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3">
+          <BrandMark href={signedIn ? '/dashboard' : '/'} />
+          <div className="flex items-center gap-2 sm:gap-4">
+            <LanguageSwitcher />
+            {sessionRead && (
+              <Link
+                href={signedIn ? '/dashboard' : '/'}
+                aria-label={signedIn ? t('backToDashboard') : t('backToHome')}
+                className="inline-flex items-center gap-1.5 h-11 sm:h-9 px-3 rounded-xl border border-[#2c313d] hover:bg-white/5 text-[#9a9eab] hover:text-[#f2f0eb] text-sm font-medium transition-all"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="hidden sm:inline">{signedIn ? t('backToDashboard') : t('backToHome')}</span>
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
       <div className="flex-1 flex items-start justify-center px-4 py-6 sm:py-8">
         <div className="w-full max-w-6xl space-y-6">
           <Card className="bg-white/5 border border-white/10 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden space-y-6">

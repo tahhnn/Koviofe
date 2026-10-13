@@ -1198,7 +1198,9 @@
     "contactButton": "Liên hệ tư vấn",
     "higherPlanActive": "Bạn đang dùng gói cao hơn còn hạn.",
     "goDashboard": "Vào bảng điều khiển",
-    "viewMyPlan": "Xem gói của tôi"
+    "viewMyPlan": "Xem gói của tôi",
+    "backToDashboard": "Về bảng điều khiển",
+    "backToHome": "Về trang chủ"
   },
   "adminPayments": {
     "checkoutTitle": "Thanh toán QR (SePay)",
