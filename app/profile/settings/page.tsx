@@ -306,24 +306,24 @@ export default function ProfileSettingsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-6">
           {/* Navigation: a pill row on phones, a sticky side menu on desktop. */}
           <nav aria-label={t('title')} className="lg:sticky lg:top-6 lg:self-start">
-            <ul className="flex lg:flex-col gap-1.5 overflow-x-auto pb-1 lg:pb-0">
+            <ul className="grid grid-flow-col auto-cols-fr gap-1.5 lg:flex lg:flex-col">
               {navItems
                 .filter((n) => tabs.includes(n.id))
                 .map(({ id, label, icon: Icon }) => {
                   const active = activeTab === id
                   return (
-                    <li key={id} className="shrink-0">
+                    <li key={id} className="min-w-0">
                       <button
                         type="button"
                         onClick={() => selectTab(id)}
                         aria-current={active ? 'page' : undefined}
-                        className={`w-full flex items-center gap-2.5 px-3.5 h-10 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap ${
+                        className={`w-full flex items-center justify-center lg:justify-start gap-1.5 lg:gap-2.5 px-2 lg:px-3.5 h-10 rounded-xl text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap ${
                           active
                             ? 'bg-[#e85d4c]/15 text-[#f2f0eb] border border-[#e85d4c]/30'
                             : 'text-[#9a9eab] border border-transparent hover:text-[#f2f0eb] hover:bg-white/5'
                         }`}
                       >
-                        <Icon className={`w-4 h-4 ${active ? 'text-[#e85d4c]' : ''}`} />
+                        <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-[#e85d4c]' : ''}`} />
                         {label}
                       </button>
                     </li>
