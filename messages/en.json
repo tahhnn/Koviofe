@@ -1235,7 +1235,7 @@
     "reason_amount_mismatch": "Amount mismatch",
     "reason_late_payment": "Paid after expiry",
     "reason_duplicate_payment": "Duplicate payment",
-    "confirm": "Confirm",
+    "confirm": "Money received?",
     "cancel": "Cancel",
     "confirmAmount": "Amount received (VND)",
     "confirmRef": "Bank transaction ID",
@@ -1280,7 +1280,8 @@
     "reconcileHint": "Fetch the last 2 days of transactions from SePay and record any the webhook missed",
     "reconcileDone": "Reconciled: SePay returned {fetched}, recovered {recovered} missed ({paid} activated, {review} need action)",
     "codeRedeemedBy": "Activated by {email}",
-    "codeNotRedeemed": "Code not activated yet"
+    "codeNotRedeemed": "Code not activated yet",
+    "confirmHint": "Only when the money is in the account but the order did not settle by itself (wrong amount, late transfer, no SePay notice). Confirming creates an activation code for the buyer."
   },
   "forgot": {
     "title": "Reset your password",

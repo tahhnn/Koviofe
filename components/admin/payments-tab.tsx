@@ -345,6 +345,12 @@ export function PaymentsTab({ onChanged }: { onChanged?: () => void }) {
               {orders.map((o) => {
                 const d = confirming[o.order_code]
                 const settleable = o.status !== 'paid'
+                // Settling by hand is for money that arrived but was not matched.
+                // On an order that is still open or flagged for review that is a
+                // real possibility, so the button stands out; on a cancelled or
+                // expired one it almost never is, so it stays a quiet link that
+                // is hard to click by mistake.
+                const quietConfirm = o.status === 'cancelled' || o.status === 'expired'
                 return (
                   <tr key={o.id} className="border-b border-white/5 align-top">
                     <td className="px-2 py-2 font-mono text-xs text-[#f2f0eb]">
@@ -392,16 +398,21 @@ export function PaymentsTab({ onChanged }: { onChanged?: () => void }) {
                     </td>
                     <td className="px-2 py-2 text-xs">
                       {settleable && !d && (
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
                           <Button
                             type="button"
+                            title={t('confirmHint')}
                             onClick={() =>
                               setConfirming((prev) => ({
                                 ...prev,
                                 [o.order_code]: { amount: String(o.amount_vnd), ref: '', note: '' },
                               }))
                             }
-                            className="h-8 rounded-lg text-xs bg-emerald-600/80 hover:bg-emerald-600 text-white"
+                            className={
+                              quietConfirm
+                                ? 'h-8 px-1 rounded-lg text-[11px] font-normal bg-transparent hover:bg-transparent text-[#9a9eab]/70 hover:text-[#c5c2ba] underline underline-offset-2 decoration-dotted'
+                                : 'h-8 rounded-lg text-xs bg-emerald-600/80 hover:bg-emerald-600 text-white'
+                            }
                           >
                             {t('confirm')}
                           </Button>
