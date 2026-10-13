@@ -4,7 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import {
   Apple,
+  Check,
+  Copy,
   Download,
+  Headset,
+  Mail,
+  MessageCircle,
+  Phone,
   ExternalLink,
   Gift,
   Hourglass,
@@ -18,6 +24,7 @@ import { QRCodeComponent } from '@/components/qr-code'
 import {
   getLuckyDrawRelease,
   type LuckyDrawBuild,
+  type LuckyDrawContact,
   type LuckyDrawPlatform,
   type LuckyDrawRelease,
 } from '@/app/actions/luckydraw'
@@ -58,6 +65,92 @@ function detectPlatform(): LuckyDrawPlatform | null {
   if (hay.includes('win')) return 'windows'
   if (hay.includes('mac')) return 'macos'
   return null
+}
+
+/**
+ * "Need a licence? Call us." The app is free to download but needs a licence
+ * to run an event, and that licence is sold by a person, so the page says who
+ * to reach. Every channel comes from app.json; a missing one is not shown.
+ */
+function LicenseContactCard({ contact }: { contact: LuckyDrawContact }) {
+  const t = useTranslations('luckyDraw')
+  const [copied, setCopied] = useState(false)
+  const copyPhone = async () => {
+    if (!contact.phoneHref) return
+    try {
+      await navigator.clipboard.writeText(contact.phoneHref)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard blocked: the number is on screen.
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="ld-contact-title"
+      className="rounded-3xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-white/[0.03] to-transparent p-5 sm:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-5"
+    >
+      <div className="flex items-start gap-4">
+        <div className="w-12 h-12 shrink-0 rounded-2xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center">
+          <Headset className="w-6 h-6 text-amber-300" />
+        </div>
+        <div className="space-y-1">
+          <h2 id="ld-contact-title" className="text-lg font-bold text-white">
+            {t('contactTitle')}
+          </h2>
+          <p className="text-sm text-gray-400 leading-relaxed max-w-xl">{t('contactBody')}</p>
+          {contact.phone && (
+            <button
+              type="button"
+              onClick={copyPhone}
+              title={t('copyPhone')}
+              className="mt-1 inline-flex items-center gap-2 text-xl font-black tracking-wide text-amber-200 hover:text-amber-100 tabular-nums"
+            >
+              {contact.phone}
+              {copied ? (
+                <Check className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <Copy className="w-4 h-4 text-amber-300/60" />
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-2 md:shrink-0">
+        {contact.phoneHref && (
+          <a
+            href={`tel:${contact.phoneHref}`}
+            className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm transition-colors"
+          >
+            <Phone className="w-4 h-4" />
+            {t('callNow')}
+          </a>
+        )}
+        {contact.zaloUrl && (
+          <a
+            href={contact.zaloUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold text-sm transition-colors"
+          >
+            <MessageCircle className="w-4 h-4" />
+            {t('chatZalo')}
+          </a>
+        )}
+        {contact.email && (
+          <a
+            href={`mailto:${contact.email}`}
+            className="inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-sm transition-colors"
+          >
+            <Mail className="w-4 h-4" />
+            {t('sendEmail')}
+          </a>
+        )}
+      </div>
+    </section>
+  )
 }
 
 /**
@@ -118,13 +211,18 @@ export function LuckyDrawPanel() {
     )
   }
 
+  const contactCard = release?.licenseContact ? <LicenseContactCard contact={release.licenseContact} /> : null
+
   if (!release?.available) {
     return (
-      <div className="bg-white/5 border border-white/5 rounded-3xl p-6 sm:p-10 lg:p-16 text-center backdrop-blur-sm shadow-xl flex flex-col items-center justify-center space-y-6">
-        <Gift className="w-16 h-16 text-amber-500/40 mx-auto" />
-        <div className="space-y-2">
-          <h3 className="text-xl font-bold text-white">{t('emptyTitle')}</h3>
-          <p className="text-gray-400 text-sm max-w-md leading-relaxed mx-auto">{t('emptyHint')}</p>
+      <div className="space-y-6">
+        {contactCard}
+        <div className="bg-white/5 border border-white/5 rounded-3xl p-6 sm:p-10 lg:p-16 text-center backdrop-blur-sm shadow-xl flex flex-col items-center justify-center space-y-6">
+          <Gift className="w-16 h-16 text-amber-500/40 mx-auto" />
+          <div className="space-y-2">
+            <h3 className="text-xl font-bold text-white">{t('emptyTitle')}</h3>
+            <p className="text-gray-400 text-sm max-w-md leading-relaxed mx-auto">{t('emptyHint')}</p>
+          </div>
         </div>
       </div>
     )
@@ -144,104 +242,107 @@ export function LuckyDrawPanel() {
   }
 
   return (
-    <div className={`grid grid-cols-1 gap-6 ${qrValue ? 'lg:grid-cols-3' : ''}`}>
-      <div className={`space-y-6 ${qrValue ? 'lg:col-span-2' : ''}`}>
-        <div className="bg-gradient-to-b from-amber-500/15 to-orange-500/5 border border-white/5 rounded-3xl p-6 shadow-lg space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 shrink-0 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-inner">
-                <Gift className="w-7 h-7 text-amber-400" />
+    <div className="space-y-6">
+      {contactCard}
+      <div className={`grid grid-cols-1 gap-6 ${qrValue ? 'lg:grid-cols-3' : ''}`}>
+        <div className={`space-y-6 ${qrValue ? 'lg:col-span-2' : ''}`}>
+          <div className="bg-gradient-to-b from-amber-500/15 to-orange-500/5 border border-white/5 rounded-3xl p-6 shadow-lg space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 shrink-0 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shadow-inner">
+                  <Gift className="w-7 h-7 text-amber-400" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-xl font-bold text-white">{release.appName || t('appName')}</h3>
+                  <p className="text-gray-400 text-sm leading-relaxed">{release.notes || t('appTagline')}</p>
+                </div>
               </div>
-              <div className="space-y-1">
-                <h3 className="text-xl font-bold text-white">{release.appName || t('appName')}</h3>
-                <p className="text-gray-400 text-sm leading-relaxed">{release.notes || t('appTagline')}</p>
-              </div>
+              {release.version && (
+                <span className="shrink-0 text-[10px] uppercase font-extrabold tracking-widest px-2 py-1 rounded-lg border text-amber-300 bg-amber-500/10 border-amber-500/20">
+                  v{release.version}
+                </span>
+              )}
             </div>
-            {release.version && (
-              <span className="shrink-0 text-[10px] uppercase font-extrabold tracking-widest px-2 py-1 rounded-lg border text-amber-300 bg-amber-500/10 border-amber-500/20">
-                v{release.version}
-              </span>
+
+            {release.homepage && (
+              <a
+                href={release.homepage}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-300 hover:text-amber-200 transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                {t('moreInfo')}
+              </a>
             )}
           </div>
 
-          {release.homepage && (
-            <a
-              href={release.homepage}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-300 hover:text-amber-200 transition-colors"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              {t('moreInfo')}
-            </a>
-          )}
-        </div>
-
-        {groups.map(([platform, builds]) => {
-          const Icon = PLATFORM_ICON[platform]
-          const isViewer = platform === viewerPlatform
-          return (
-            <div key={platform} className="space-y-3">
-              <div className="flex items-center gap-2 px-1">
-                <Icon className="w-4 h-4 text-gray-400" />
-                <h4 className="text-[11px] uppercase font-extrabold tracking-widest text-gray-400">
-                  {t(`platform.${platform}`)}
-                </h4>
-                {isViewer && (
-                  <span className="text-[10px] uppercase font-extrabold tracking-widest px-2 py-0.5 rounded-lg border text-emerald-300 bg-emerald-500/10 border-emerald-500/20">
-                    {t('yourDevice')}
-                  </span>
-                )}
-              </div>
-
-              {builds.map((build) => (
-                <div
-                  key={build.fileName}
-                  className="bg-white/5 border border-white/5 hover:border-white/15 rounded-2xl p-4 sm:p-5 backdrop-blur-sm shadow-lg flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between transition-all duration-300"
-                >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-11 h-11 shrink-0 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                      <Icon className="w-5 h-5 text-indigo-400" />
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-sm font-bold text-white truncate">{buildLabel(build)}</p>
-                      <p className="text-[11px] text-gray-500 truncate">{formatSize(build.sizeBytes)}</p>
-                    </div>
-                  </div>
-
-                  {/* A plain anchor, not a fetch: the browser's own downloader
-                      handles resume and progress for a file this size. */}
-                  <a href={build.url} download className="shrink-0">
-                    <Button
-                      size="sm"
-                      className={`w-full sm:w-auto font-bold text-xs rounded-xl shadow-md border-none h-11 sm:h-9 flex items-center gap-1.5 text-white ${
-                        isViewer ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-white/10 hover:bg-white/20'
-                      }`}
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      {t('download')}
-                    </Button>
-                  </a>
+          {groups.map(([platform, builds]) => {
+            const Icon = PLATFORM_ICON[platform]
+            const isViewer = platform === viewerPlatform
+            return (
+              <div key={platform} className="space-y-3">
+                <div className="flex items-center gap-2 px-1">
+                  <Icon className="w-4 h-4 text-gray-400" />
+                  <h4 className="text-[11px] uppercase font-extrabold tracking-widest text-gray-400">
+                    {t(`platform.${platform}`)}
+                  </h4>
+                  {isViewer && (
+                    <span className="text-[10px] uppercase font-extrabold tracking-widest px-2 py-0.5 rounded-lg border text-emerald-300 bg-emerald-500/10 border-emerald-500/20">
+                      {t('yourDevice')}
+                    </span>
+                  )}
                 </div>
-              ))}
 
-            </div>
-          )
-        })}
-      </div>
+                {builds.map((build) => (
+                  <div
+                    key={build.fileName}
+                    className="bg-white/5 border border-white/5 hover:border-white/15 rounded-2xl p-4 sm:p-5 backdrop-blur-sm shadow-lg flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between transition-all duration-300"
+                  >
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-11 h-11 shrink-0 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                        <Icon className="w-5 h-5 text-indigo-400" />
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-sm font-bold text-white truncate">{buildLabel(build)}</p>
+                        <p className="text-[11px] text-gray-500 truncate">{formatSize(build.sizeBytes)}</p>
+                      </div>
+                    </div>
 
-      {qrValue && (
-        <div className="bg-white/5 border border-white/5 rounded-3xl p-6 backdrop-blur-sm shadow-lg flex flex-col items-center text-center gap-4 h-fit">
-          <div className="flex items-center gap-2 text-gray-400">
-            <QrCode className="w-4 h-4" />
-            <span className="text-[10px] uppercase font-extrabold tracking-widest">{t('scanTitle')}</span>
-          </div>
-          <QRCodeComponent value={qrValue} size={200} className="w-full" />
-          <p className="text-xs text-gray-400 leading-relaxed">
-            {t('scanHint', { platform: t(`platform.${mobileBuild!.platform}`) })}
-          </p>
+                    {/* A plain anchor, not a fetch: the browser's own downloader
+                        handles resume and progress for a file this size. */}
+                    <a href={build.url} download className="shrink-0">
+                      <Button
+                        size="sm"
+                        className={`w-full sm:w-auto font-bold text-xs rounded-xl shadow-md border-none h-11 sm:h-9 flex items-center gap-1.5 text-white ${
+                          isViewer ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-white/10 hover:bg-white/20'
+                        }`}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        {t('download')}
+                      </Button>
+                    </a>
+                  </div>
+                ))}
+
+              </div>
+            )
+          })}
         </div>
-      )}
+
+        {qrValue && (
+          <div className="bg-white/5 border border-white/5 rounded-3xl p-6 backdrop-blur-sm shadow-lg flex flex-col items-center text-center gap-4 h-fit">
+            <div className="flex items-center gap-2 text-gray-400">
+              <QrCode className="w-4 h-4" />
+              <span className="text-[10px] uppercase font-extrabold tracking-widest">{t('scanTitle')}</span>
+            </div>
+            <QRCodeComponent value={qrValue} size={200} className="w-full" />
+            <p className="text-xs text-gray-400 leading-relaxed">
+              {t('scanHint', { platform: t(`platform.${mobileBuild!.platform}`) })}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

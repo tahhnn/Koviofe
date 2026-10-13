@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useFormatter, useTranslations } from 'next-intl'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Check, CheckCircle2, Clock, Copy, Loader2, XCircle } from 'lucide-react'
+import { Check, CheckCircle2, Clock, Copy, LayoutDashboard, Loader2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { PurchasedCode } from '@/components/purchased-code'
 import {
@@ -334,6 +335,22 @@ export function PaymentCheckout({
               usedByMe={!!order.redeemed_by_me}
             />
           )}
+          {/* Done buying: the next thing the host wants is their dashboard. */}
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+            <Link
+              href="/dashboard"
+              className="inline-flex flex-1 items-center justify-center gap-2 h-11 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black text-sm font-bold"
+            >
+              <LayoutDashboard className="w-4 h-4" />
+              {t('goDashboard')}
+            </Link>
+            <Link
+              href="/profile/settings#plan"
+              className="inline-flex flex-1 items-center justify-center h-11 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-[#f2f0eb] text-sm font-semibold"
+            >
+              {t('viewMyPlan')}
+            </Link>
+          </div>
         </div>
       )}
 

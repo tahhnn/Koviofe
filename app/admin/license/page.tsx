@@ -35,7 +35,7 @@ import { Ban, Copy, Download, KeyRound, Mail, RefreshCw, Save, Undo2 } from 'luc
 import { isPaidPlan } from '@/lib/license'
 import { PaymentsTab } from '@/components/admin/payments-tab'
 
-type DurationKey = '30' | '90' | '365' | 'lifetime'
+type DurationKey = '7' | '30' | '90' | '365' | 'lifetime'
 
 function formatLimit(n: number) {
   return n < 0 ? '∞' : String(n)
@@ -118,10 +118,11 @@ function formatDate(iso: string | null | undefined, locale: string) {
   }
 }
 
-// canStack: the user holds a Pro term that has not lapsed, so a new term can
-// be added to it. Matches the backend: an expired-but-unswept row restarts.
-function canStack(s: LicenseSubscriptionRow) {
-  return s.plan_id === 'pro' && !s.expired
+// canStack: the user holds a paid term that has not lapsed, so a new term can
+// be added to it. Matches the backend (computeTerm): an expired-but-unswept row
+// restarts, and only a term of the same plan stacks.
+function canStack(s: LicenseSubscriptionRow, planId: string) {
+  return isPaidPlan(s.plan_id) && s.plan_id === planId && !s.expired
 }
 
 
@@ -172,6 +173,7 @@ export default function AdminLicensePage() {
 
   const [drafts, setDrafts] = useState<Record<string, PricingPlan>>({})
   const [durationByUser, setDurationByUser] = useState<Record<number, DurationKey>>({})
+  const [planByUser, setPlanByUser] = useState<Record<number, string>>({})
   // Unset means "the default for this row" — ticked whenever there is a live
   // Pro term to add to, so a paid renewal never silently drops the days left.
   const [extendByUser, setExtendByUser] = useState<Record<number, boolean>>({})
@@ -381,8 +383,14 @@ export default function AdminLicensePage() {
     }
   }
 
+  // The plan a grant on this row writes: the admin's pick, else the user's
+  // current paid plan (a renewal), else Pro.
+  const grantPlanFor = (s: LicenseSubscriptionRow) =>
+    planByUser[s.user_id] || (isPaidPlan(s.plan_id) ? s.plan_id : 'pro')
+  const stackable = (s: LicenseSubscriptionRow) => canStack(s, grantPlanFor(s))
+
   const extendFor = (s: LicenseSubscriptionRow) =>
-    canStack(s) && (extendByUser[s.user_id] ?? true)
+    stackable(s) && (extendByUser[s.user_id] ?? true)
 
   // What the grant will write, computed the way the API does (computeTerm), so
   // the admin sees the end date before committing rather than after.
@@ -402,17 +410,19 @@ export default function AdminLicensePage() {
 
   const grantPro = async (s: LicenseSubscriptionRow) => {
     const userId = s.user_id
+    const planId = grantPlanFor(s)
+    const plan = plans.find((p) => p.id === planId)?.name ?? planId
     setBusyKey(`pro-${userId}`)
     try {
       const dur = durationByUser[userId] || '30'
       if (dur === 'lifetime') {
-        await adminAssignPlan({ userId, planId: 'pro', lifetime: true })
-        flash(t('grantedLifetime', { user: userId }))
+        await adminAssignPlan({ userId, planId, lifetime: true })
+        flash(t('grantedLifetime', { plan, user: userId }))
       } else {
         const days = parseInt(dur, 10)
         const extend = extendFor(s)
-        await adminAssignPlan({ userId, planId: 'pro', endsAtDays: days, extend })
-        flash(t('grantedDays', { days, user: userId }))
+        await adminAssignPlan({ userId, planId, endsAtDays: days, extend })
+        flash(t('grantedDays', { plan, days, user: userId }))
       }
       await load()
     } catch (e: unknown) {
@@ -770,6 +780,22 @@ export default function AdminLicensePage() {
                             <td className="px-4 py-3 align-top">
                               <div className="flex flex-col gap-2 min-w-[220px]">
                                 <select
+                                  value={grantPlanFor(s)}
+                                  onChange={(e) =>
+                                    setPlanByUser((prev) => ({ ...prev, [s.user_id]: e.target.value }))
+                                  }
+                                  aria-label={t('grantPlan')}
+                                  className="bg-black/40 border border-white/10 text-[#f2f0eb] h-10 sm:h-9 rounded-lg text-xs px-2"
+                                >
+                                  {plans
+                                    .filter((p) => isPaidPlan(p.id) && p.is_active !== false)
+                                    .map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name}
+                                      </option>
+                                    ))}
+                                </select>
+                                <select
                                   value={durationByUser[s.user_id] || '30'}
                                   onChange={(e) =>
                                     setDurationByUser((prev) => ({
@@ -779,6 +805,7 @@ export default function AdminLicensePage() {
                                   }
                                   className="bg-black/40 border border-white/10 text-[#f2f0eb] h-10 sm:h-9 rounded-lg text-xs px-2"
                                 >
+                                  <option value="7">{t('pro7')}</option>
                                   <option value="30">{t('pro30')}</option>
                                   <option value="90">{t('pro90')}</option>
                                   <option value="365">{t('pro1y')}</option>
@@ -801,7 +828,7 @@ export default function AdminLicensePage() {
                                     {t('revokePro')}
                                   </Button>
                                 </div>
-                                {canStack(s) && (durationByUser[s.user_id] || '30') !== 'lifetime' && (
+                                {stackable(s) && (durationByUser[s.user_id] || '30') !== 'lifetime' && (
                                   <label className="flex items-center gap-2 text-xs text-[#c5c2ba]">
                                     <input
                                       type="checkbox"
@@ -816,7 +843,8 @@ export default function AdminLicensePage() {
                                 )}
                                 <div className="text-xs text-[#9a9eab]">
                                   {t('newEndDate', { date: previewEnd(s, durationByUser[s.user_id] || '30') })}
-                                  {canStack(s) &&
+                                  {isPaidPlan(s.plan_id) &&
+                                    !s.expired &&
                                     !extendFor(s) &&
                                     !s.lifetime &&
                                     (durationByUser[s.user_id] || '30') !== 'lifetime' &&

@@ -11,14 +11,14 @@ import {
   adminUpdateUserStatus,
   type AdminUserRow,
 } from '@/app/actions/admin-users'
-import { adminAssignPlan } from '@/app/actions/license'
+import { adminAssignPlan, adminListPlans, type PricingPlan } from '@/app/actions/license'
 import { RefreshCw, Search, Shield, BadgePercent } from 'lucide-react'
 import { isPaidPlan } from '@/lib/license'
 import { useToast } from '@/components/ui/toast'
 import { useRouter } from 'next/navigation'
 import { formatDateTime } from '@/lib/audit-labels'
 
-type DurationKey = '30' | '90' | '365' | 'lifetime'
+type DurationKey = '7' | '30' | '90' | '365' | 'lifetime'
 
 /** UI model: Admin (ops) vs User (mua license). DB role "host" = User. */
 function accountLabel(u: Pick<AdminUserRow, 'role' | 'account_type'>) {
@@ -36,6 +36,22 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [durationByUser, setDurationByUser] = useState<Record<number, DurationKey>>({})
+  const [planByUser, setPlanByUser] = useState<Record<number, string>>({})
+  // Paid plans an admin can grant, from the API rather than a hardcoded list,
+  // so Edu/Business (and any later plan) show up without a frontend change.
+  const [paidPlans, setPaidPlans] = useState<PricingPlan[]>([])
+
+  useEffect(() => {
+    adminListPlans()
+      .then((plans) => setPaidPlans(plans.filter((p) => isPaidPlan(p.id) && p.is_active !== false)))
+      .catch(() => setPaidPlans([]))
+  }, [])
+
+  // The plan a grant on this row writes: the admin's pick, else the user's
+  // current paid plan (a renewal), else Pro.
+  const grantPlanFor = (u: AdminUserRow) =>
+    planByUser[u.id] || (isPaidPlan(u.plan_id) ? u.plan_id : 'pro')
+  const planName = (id: string) => paidPlans.find((p) => p.id === id)?.name ?? id
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -57,15 +73,21 @@ export default function AdminUsersPage() {
 
   const grantPro = async (user: AdminUserRow) => {
     setBusyId(user.id)
+    const planId = grantPlanFor(user)
+    const plan = planName(planId)
     try {
       const dur = durationByUser[user.id] || '30'
       if (dur === 'lifetime') {
-        await adminAssignPlan({ userId: user.id, planId: 'pro', lifetime: true })
-        toast.success(t('grantedPro'), `${user.email} · ${t('lifetime')}`)
+        await adminAssignPlan({ userId: user.id, planId, lifetime: true })
+        toast.success(t('grantedPlan', { plan }), `${user.email} · ${t('lifetime')}`)
       } else {
         const days = parseInt(dur, 10)
-        await adminAssignPlan({ userId: user.id, planId: 'pro', endsAtDays: days })
-        toast.success(t('grantedPro'), `${user.email} · ${t('days', { n: days })}`)
+        // Renewing the plan the user already has adds to the days left
+        // (the backend restarts the term if it has lapsed); switching plan
+        // starts a new term from today.
+        const extend = user.plan_id === planId
+        await adminAssignPlan({ userId: user.id, planId, endsAtDays: days, extend })
+        toast.success(t('grantedPlan', { plan }), `${user.email} · ${t('days', { n: days })}`)
       }
       await load()
     } catch (e: unknown) {
@@ -268,6 +290,18 @@ export default function AdminUsersPage() {
                         <div className="flex flex-col items-end gap-2">
                           <div className="flex flex-wrap justify-end gap-2 items-center">
                             <select
+                              value={grantPlanFor(u)}
+                              onChange={(e) => setPlanByUser((prev) => ({ ...prev, [u.id]: e.target.value }))}
+                              aria-label={t('grantPlan')}
+                              className="h-10 sm:h-8 text-xs sm:text-[11px] rounded-lg bg-[#12141a] border border-[#2c313d] text-[#c5c2ba] px-2"
+                            >
+                              {(paidPlans.length ? paidPlans : [{ id: 'pro', name: 'Pro' } as PricingPlan]).map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                            <select
                               value={durationByUser[u.id] || '30'}
                               onChange={(e) =>
                                 setDurationByUser((prev) => ({
@@ -277,6 +311,7 @@ export default function AdminUsersPage() {
                               }
                               className="h-10 sm:h-8 text-xs sm:text-[11px] rounded-lg bg-[#12141a] border border-[#2c313d] text-[#c5c2ba] px-2"
                             >
+                              <option value="7">{t('pro7')}</option>
                               <option value="30">{t('pro30')}</option>
                               <option value="90">{t('pro90')}</option>
                               <option value="365">{t('pro1y')}</option>
