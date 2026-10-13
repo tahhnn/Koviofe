@@ -438,6 +438,8 @@ export default function DashboardPage() {
         {license?.enforcement === true && !isLicenseLocked(license) && isLicenseExpiringSoon(license) && (
           <LicenseExpiringBanner
             days={license?.days_remaining ?? 0}
+            planName={license?.entitlements?.plan_name}
+            endsAt={license?.subscription?.ends_at}
             onRedeemed={async () => setLicense(await getMyLicense())}
           />
         )}

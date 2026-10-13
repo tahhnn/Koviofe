@@ -148,8 +148,12 @@
     "until": "đến {date}",
     "forever": "vĩnh viễn",
     "expiringTitle": "Gói của bạn còn {days} ngày",
-    "expiringBody": "Hết hạn là tài khoản trở về trạng thái chưa kích hoạt: không tạo được quiz hay phòng mới, phòng đang mở sẽ bị kết thúc. Nhập mã mới để gia hạn.",
-    "buyPlan": "Mua / gia hạn gói"
+    "expiringBody": "Khi hết hạn, tài khoản trở về gói Free với giới hạn thấp hơn. Nhập mã mới để gia hạn.",
+    "buyPlan": "Mua / gia hạn gói",
+    "expiringShort": "Gói {plan} còn {days} ngày",
+    "expiringOn": "hết hạn {date}",
+    "enterCode": "Nhập mã",
+    "renew": "Gia hạn"
   },
   "qr": {
     "generating": "Đang tạo…",
@@ -1192,7 +1196,9 @@
     "freePrice": "Miễn phí",
     "contactPrice": "Liên hệ",
     "contactButton": "Liên hệ tư vấn",
-    "higherPlanActive": "Bạn đang dùng gói cao hơn còn hạn."
+    "higherPlanActive": "Bạn đang dùng gói cao hơn còn hạn.",
+    "goDashboard": "Vào bảng điều khiển",
+    "viewMyPlan": "Xem gói của tôi"
   },
   "adminPayments": {
     "checkoutTitle": "Thanh toán QR (SePay)",

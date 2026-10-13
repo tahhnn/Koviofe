@@ -37,15 +37,38 @@ export function isPaidPlan(planId?: string | null): boolean {
 }
 
 /**
- * True when a paid term ends within `withinDays`.
+ * Days-before-expiry at which a term of `termDays` counts as "expiring": the
+ * largest of 7 / 3 / 1 that is less than half the term, or null when none is.
+ * A week bought today is already 7 days from its end, and calling it
+ * "expiring" tells a customer who just paid that the plan is running out —
+ * so a week warns at 3 days, a month or a year at 7. Same rule as the
+ * expiry email (backend internal/pkg/license/warning.go, warnsAt).
+ */
+export function expiryWarningDays(termDays: number): number | null {
+  for (const t of [7, 3, 1]) if (termDays > 2 * t) return t
+  return null
+}
+
+/**
+ * True when a paid term is close enough to its end to warn about it.
+ *
+ * `withinDays` forces a fixed window; without it the window follows the term
+ * length (expiryWarningDays), read from the subscription's start and end.
  *
  * Lives here for the same reason isLicenseLocked does: `app/actions/license.ts`
  * is a `'use server'` module and cannot export a synchronous function.
  *
  * A snapshot with no expiry (lifetime, or no term at all) is never "expiring".
  */
-export function isLicenseExpiringSoon(snapshot: LicenseSnapshot | null, withinDays = 7): boolean {
+export function isLicenseExpiringSoon(snapshot: LicenseSnapshot | null, withinDays?: number): boolean {
   const days = snapshot?.days_remaining
-  if (days === null || days === undefined) return false
-  return days >= 0 && days <= withinDays
+  if (days === null || days === undefined || days < 0) return false
+  let window = withinDays ?? null
+  if (window === null) {
+    const start = Date.parse(snapshot?.subscription?.starts_at ?? '')
+    const end = Date.parse(snapshot?.subscription?.ends_at ?? '')
+    // Unknown term length: fall back to the old fixed 7-day window.
+    window = Number.isFinite(start) && Number.isFinite(end) ? expiryWarningDays((end - start) / 86_400_000) : 7
+  }
+  return window !== null && days <= window
 }

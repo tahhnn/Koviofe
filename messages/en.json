@@ -148,8 +148,12 @@
     "until": "until {date}",
     "forever": "forever",
     "expiringTitle": "Your plan has {days} days left",
-    "expiringBody": "When it lapses the account returns to the unactivated state: no new quizzes or rooms, and any open room is ended. Redeem a new code to extend it.",
-    "buyPlan": "Buy or renew"
+    "expiringBody": "When it lapses the account goes back to the Free plan with lower limits. Redeem a new code to extend it.",
+    "buyPlan": "Buy or renew",
+    "expiringShort": "{plan} plan: {days} days left",
+    "expiringOn": "ends {date}",
+    "enterCode": "Enter code",
+    "renew": "Renew"
   },
   "qr": {
     "generating": "Generating…",
@@ -1193,7 +1197,9 @@
     "freePrice": "Free",
     "contactPrice": "Contact us",
     "contactButton": "Talk to us",
-    "higherPlanActive": "You have a higher plan with time left."
+    "higherPlanActive": "You have a higher plan with time left.",
+    "goDashboard": "Go to dashboard",
+    "viewMyPlan": "View my plan"
   },
   "adminPayments": {
     "checkoutTitle": "QR checkout (SePay)",
