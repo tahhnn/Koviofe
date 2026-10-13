@@ -355,7 +355,14 @@
     "sharedEditable": "Can edit",
     "sharedSuspended": "Suspended",
     "sharedSuspendedHint": "The owner's plan is no longer Pro, so editing is suspended.",
-    "sharedWithCount": "Shared with {count} people"
+    "sharedWithCount": "Shared with {count} people",
+    "planBadgeTitle": "Current plan: {plan} — see details",
+    "planUpgrade": "Upgrade",
+    "freeHint": "You're on the {plan} plan: {used}/{max} quizzes created, up to {players} players per room.",
+    "freeHintNoQuizCap": "You're on the {plan} plan: up to {players} players per room.",
+    "freeHintLast": "You can create 1 more quiz on the {plan} plan.",
+    "freeHintFull": "You've used all {max} quizzes on the {plan} plan.",
+    "comparePlans": "Compare plans"
   },
   "luckyDraw": {
     "tab": "Get LuckyDraw",

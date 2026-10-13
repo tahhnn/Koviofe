@@ -354,7 +354,14 @@
     "sharedEditable": "Được sửa",
     "sharedSuspended": "Tạm ngưng",
     "sharedSuspendedHint": "Gói của chủ quiz không còn Pro nên quyền sửa đang tạm ngưng.",
-    "sharedWithCount": "Đang chia sẻ với {count} người"
+    "sharedWithCount": "Đang chia sẻ với {count} người",
+    "planBadgeTitle": "Gói hiện tại: {plan} — xem chi tiết",
+    "planUpgrade": "Nâng cấp",
+    "freeHint": "Bạn đang dùng gói {plan}: đã tạo {used}/{max} quiz, tối đa {players} người chơi mỗi phòng.",
+    "freeHintNoQuizCap": "Bạn đang dùng gói {plan}: tối đa {players} người chơi mỗi phòng.",
+    "freeHintLast": "Bạn còn tạo được 1 quiz với gói {plan}.",
+    "freeHintFull": "Bạn đã dùng hết {max} quiz của gói {plan}.",
+    "comparePlans": "Xem các gói"
   },
   "luckyDraw": {
     "tab": "Tải app LuckyDraw",

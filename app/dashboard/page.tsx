@@ -42,6 +42,7 @@ import { BrandMark } from '@/components/brand-mark'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { LicenseLockedBanner } from '@/components/license-locked-banner'
 import { LicenseExpiringBanner } from '@/components/license-expiring-banner'
+import { FreePlanHint, PlanBadge } from '@/components/plan-badge'
 import { getMyLicense, type LicenseSnapshot } from '@/app/actions/license'
 import { isLicenseExpiringSoon, isLicenseLocked } from '@/lib/license'
 import { TourButton } from '@/components/tour-button'
@@ -328,6 +329,7 @@ export default function DashboardPage() {
                 {tCommon('settings')}
               </Button>
             </Link>
+            <PlanBadge license={license} />
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-8 h-8 shrink-0 rounded-full bg-[#e85d4c]/20 border border-[#e85d4c]/30 flex items-center justify-center font-semibold text-xs text-[#e85d4c]">
                 {(user?.email?.[0] || 'H').toUpperCase()}
@@ -376,6 +378,7 @@ export default function DashboardPage() {
               <div className="px-3 py-2.5 border-b border-[#2c313d] mb-1 min-w-0">
                 <p className="text-sm font-semibold text-[#f2f0eb] truncate">{user?.nickname || 'User'}</p>
                 {user?.email && <p className="text-xs text-[#9a9eab] truncate">{user.email}</p>}
+                <PlanBadge license={license} className="mt-2" />
               </div>
               {user?.role === 'admin' && (
                 <Link
@@ -447,6 +450,7 @@ export default function DashboardPage() {
             <p className="text-gray-400 mt-2 text-base max-w-xl">
               {t('subtitle')}
             </p>
+            <FreePlanHint license={license} />
           </div>
           <div className="w-full md:w-auto">
             <Button
